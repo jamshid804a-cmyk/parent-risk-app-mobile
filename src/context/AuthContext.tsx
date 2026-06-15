@@ -1,11 +1,18 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
 
+type Student = {
+  id: number;
+  name: string;
+  grade: string;
+  gpa: number;
+  cgpa: number;
+  risk: string;
+};
+
 type User = {
   parentId: number;
-  studentId: number;
-  studentName: string;
-  studentGrade: string;
+  students: Student[];
   phone: string;
 };
 
@@ -46,7 +53,8 @@ export const AuthProvider = ({ children }: any) => {
 
   const login = async (phone: string, password: string) => {
     try {
-      const res = await fetch(`${BASE_URL}/api/parent/login`, {
+      // ✅ CORRECTED URL: /api/login (not /api/parent/login)
+      const res = await fetch(`${BASE_URL}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, password }),
@@ -56,11 +64,11 @@ export const AuthProvider = ({ children }: any) => {
 
       if (!res.ok) return { success: false, error: data.error || "Invalid credentials" };
 
+      console.log("Login response:", JSON.stringify(data, null, 2));
+
       const newUser: User = {
         parentId: data.parentId,
-        studentId: data.studentId,
-        studentName: data.studentName,
-        studentGrade: data.studentGrade,
+        students: data.students || [],
         phone,
       };
 
@@ -68,6 +76,7 @@ export const AuthProvider = ({ children }: any) => {
       await AsyncStorage.setItem("user", JSON.stringify(newUser));
       return { success: true };
     } catch (error) {
+      console.log("Login error:", error);
       return { success: false, error: "Cannot connect to server. Check your WiFi." };
     }
   };

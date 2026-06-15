@@ -1,53 +1,26 @@
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   ScrollView,
   Text,
   View,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
 
-const BASE_URL = "https://parentriskapp-backend.vercel.app";
-
 export default function Performance() {
-  const { user } = useAuth();
-  const [student, setStudent] = useState(null);
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
-
-  const fetchStudent = async () => {
-    try {
-      console.log("LOGGED IN USER:", JSON.stringify(user));
-
-      const response = await fetch(
-        `${BASE_URL}/api/parent/student?studentId=${user?.studentId}&parentId=${user?.parentId}`
-      );
-
-      const data = await response.json();
-      console.log("API DATA:", JSON.stringify(data));
-
-      if (data && data.success && data.data) {
-        const myChild = data.data;
-        setStudent({
-          name: myChild.name,
-          rollNo: myChild.id,
-          semester: myChild.grade,
-          gpa: myChild.gpa,
-          cgpa: parseFloat(myChild.cgpa),
-          risk: parseFloat(myChild.cgpa) < 2.5 ? "at-risk" : "good",
-        });
-      }
-    } catch (error) {
-      console.log("Fetch Error:", error);
-    }
-    setLoading(false);
-  };
+  const [students, setStudents] = useState<any[]>([]);
 
   useEffect(() => {
-    if (user) fetchStudent();
-    else setLoading(false);
+    if (user?.students) {
+      setStudents(user.students);
+      setLoading(false);
+    }
   }, [user]);
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" color="#4f46e5" />
@@ -56,21 +29,55 @@ export default function Performance() {
     );
   }
 
-  if (!student) {
+  if (!students || students.length === 0) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 20 }}>
         <Text style={{ color: "#dc2626", fontSize: 16, fontWeight: "700", textAlign: "center" }}>
           No Student Data Found
         </Text>
-        <Text style={{ color: "#6b7280", fontSize: 13, marginTop: 8, textAlign: "center" }}>
-          studentId: {String(user?.studentId)} {"\n"}
-          parentId: {String(user?.parentId)}
-        </Text>
       </View>
     );
   }
 
-  const isRisk = student.cgpa < 2.5;
+  // Filter only at-risk students for warning
+  const atRiskStudents = students.filter(s => (s.cgpa || 0) < 2.5);
+
+  const renderStudent = ({ item: student }: { item: any }) => {
+    const isRisk = (student.cgpa || 0) < 2.5;
+    return (
+      <View style={{
+        backgroundColor: "white",
+        padding: 20,
+        borderRadius: 20,
+        marginTop: 15,
+        elevation: 3,
+        borderLeftWidth: 5,
+        borderLeftColor: isRisk ? "#dc2626" : "#4f46e5",
+      }}>
+        <Text style={{ fontSize: 16, fontWeight: "800", marginBottom: 12, color: "#1e1b4b" }}>
+          👤 {student.name}
+        </Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+          <Text style={{ color: "#6b7280", fontSize: 14 }}>Roll No</Text>
+          <Text style={{ fontWeight: "700", color: "#111827" }}>{student.id}</Text>
+        </View>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+          <Text style={{ color: "#6b7280", fontSize: 14 }}>Semester</Text>
+          <Text style={{ fontWeight: "700", color: "#111827" }}>{student.grade}</Text>
+        </View>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+          <Text style={{ color: "#6b7280", fontSize: 14 }}>GPA</Text>
+          <Text style={{ fontWeight: "700", color: "#111827" }}>{student.gpa}</Text>
+        </View>
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <Text style={{ color: "#6b7280", fontSize: 14 }}>CGPA</Text>
+          <Text style={{ fontWeight: "700", color: isRisk ? "#dc2626" : "#111827" }}>
+            {student.cgpa} {isRisk && "⚠️"}
+          </Text>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: "#f0f4ff", padding: 15 }}>
@@ -85,91 +92,34 @@ export default function Performance() {
           📘 Academic Performance
         </Text>
         <Text style={{ color: "#c7d2fe", marginTop: 6, fontSize: 13 }}>
-          Student Report Card Overview
+          {students.length} Student{students.length > 1 ? 's' : ''} • {atRiskStudents.length} At Risk
         </Text>
       </View>
 
-      <View style={{
-        backgroundColor: "white",
-        padding: 20,
-        borderRadius: 20,
-        marginTop: 15,
-        elevation: 3,
-        borderLeftWidth: 5,
-        borderLeftColor: "#4f46e5",
-      }}>
-        <Text style={{ fontSize: 16, fontWeight: "800", marginBottom: 12, color: "#1e1b4b" }}>
-          👤 Student Information
-        </Text>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
-          <Text style={{ color: "#6b7280", fontSize: 14 }}>Name</Text>
-          <Text style={{ fontWeight: "700", color: "#111827" }}>{student.name}</Text>
-        </View>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
-          <Text style={{ color: "#6b7280", fontSize: 14 }}>Roll No</Text>
-          <Text style={{ fontWeight: "700", color: "#111827" }}>{student.rollNo}</Text>
-        </View>
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <Text style={{ color: "#6b7280", fontSize: 14 }}>Semester</Text>
-          <Text style={{ fontWeight: "700", color: "#111827" }}>{student.semester}</Text>
-        </View>
-      </View>
-
-      <View style={{ flexDirection: "row", marginTop: 15, gap: 10 }}>
+      {atRiskStudents.length > 0 && (
         <View style={{
-          flex: 1,
-          backgroundColor: "#4f46e5",
+          backgroundColor: "#fef2f2",
           padding: 20,
           borderRadius: 20,
-          alignItems: "center",
-          elevation: 4,
+          marginTop: 15,
+          borderLeftWidth: 5,
+          borderLeftColor: "#dc2626",
         }}>
-          <Text style={{ color: "#c7d2fe", fontSize: 13 }}>GPA</Text>
-          <Text style={{ color: "white", fontSize: 32, fontWeight: "800" }}>{student.gpa}</Text>
-          <Text style={{ color: "#c7d2fe", fontSize: 12 }}>This Semester</Text>
+          <Text style={{ fontSize: 16, fontWeight: "800", color: "#dc2626", marginBottom: 8 }}>
+            ⚠️ {atRiskStudents.length} Student{atRiskStudents.length > 1 ? 's' : ''} Need Attention
+          </Text>
+          <Text style={{ fontSize: 14, color: "#dc2626", lineHeight: 22 }}>
+            CGPA is below 2.5. Please contact academic advisor.
+          </Text>
         </View>
-        <View style={{
-          flex: 1,
-          backgroundColor: "#0ea5e9",
-          padding: 20,
-          borderRadius: 20,
-          alignItems: "center",
-          elevation: 4,
-        }}>
-          <Text style={{ color: "#e0f2fe", fontSize: 13 }}>CGPA</Text>
-          <Text style={{ color: "white", fontSize: 32, fontWeight: "800" }}>{student.cgpa}</Text>
-          <Text style={{ color: "#e0f2fe", fontSize: 12 }}>Cumulative</Text>
-        </View>
-      </View>
+      )}
 
-      <View style={{
-        backgroundColor: isRisk ? "#fef2f2" : "#f0fdf4",
-        padding: 20,
-        borderRadius: 20,
-        marginTop: 15,
-        elevation: 2,
-        borderLeftWidth: 5,
-        borderLeftColor: isRisk ? "#dc2626" : "#16a34a",
-        marginBottom: 30,
-      }}>
-        <Text style={{
-          fontSize: 16,
-          fontWeight: "800",
-          color: isRisk ? "#dc2626" : "#16a34a",
-          marginBottom: 8,
-        }}>
-          {isRisk ? "⚠️ At Risk - Needs Improvement" : "🌟 Excellent Performance!"}
-        </Text>
-        <Text style={{
-          fontSize: 14,
-          color: isRisk ? "#dc2626" : "#16a34a",
-          lineHeight: 22,
-        }}>
-          {isRisk
-            ? "CGPA is below 2.5. Please contact your academic advisor immediately."
-            : "Keep up the great work! Study daily and continue improving."}
-        </Text>
-      </View>
+      <FlatList
+        data={students}
+        renderItem={renderStudent}
+        keyExtractor={(item) => item.id.toString()}
+        scrollEnabled={false}
+      />
     </ScrollView>
   );
 }

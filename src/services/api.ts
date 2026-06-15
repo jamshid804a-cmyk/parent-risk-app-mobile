@@ -1,4 +1,5 @@
-const BASE_URL = "https://student-academic-performance-system.vercel.app";
+// ✅ Use your MOBILE BACKEND URL, not the website URL
+const BASE_URL = "https://parentriskapp-backend.vercel.app";
 
 export const getStudentData = async (studentId: number, parentId: number) => {
   try {

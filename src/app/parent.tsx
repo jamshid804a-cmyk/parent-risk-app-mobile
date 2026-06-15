@@ -1,29 +1,33 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity } from "react-native";
-import { useAuth } from "../context/AuthContext";
 import { router, useFocusEffect } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { Text, TouchableOpacity, View } from "react-native";
+import { useAuth } from "../context/AuthContext";
 
-const BASE_URL = "http://192.168.18.137:3000";
+const BASE_URL = "https://parentriskapp-backend.vercel.app";
 
 export default function Parent() {
   const { user, logout } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [atRiskCount, setAtRiskCount] = useState(0);
 
   useEffect(() => {
-    if (user?.studentId) fetchUnreadCount();
+    if (user?.students) {
+      const riskCount = user.students.filter(s => (s.cgpa || 0) < 2.5).length;
+      setAtRiskCount(riskCount);
+    }
+    if (user?.students?.[0]?.id) fetchUnreadCount();
   }, [user]);
 
-  // Refresh badge count every time this screen comes back into focus
   useFocusEffect(
     React.useCallback(() => {
-      if (user?.studentId) fetchUnreadCount();
+      if (user?.students?.[0]?.id) fetchUnreadCount();
     }, [user])
   );
 
   async function fetchUnreadCount() {
     try {
       const res = await fetch(
-        `${BASE_URL}/api/notifications?studentId=${user?.studentId}`
+        `${BASE_URL}/api/notifications?studentId=${user?.students?.[0]?.id}`
       );
       const data = await res.json();
       const unread = data.filter((n: any) => !n.readStatus).length;
@@ -33,10 +37,11 @@ export default function Parent() {
     }
   }
 
+  const totalStudents = user?.students?.length || 0;
+
   return (
     <View style={{ flex: 1, backgroundColor: "#f4f6f8", padding: 20 }}>
 
-      {/* HEADER */}
       <View style={{
         backgroundColor: "#fff",
         padding: 20,
@@ -76,9 +81,11 @@ export default function Parent() {
         <Text style={{ marginTop: 10, color: "gray" }}>
           Welcome: {user?.phone}
         </Text>
+        <Text style={{ marginTop: 5, color: "#4f46e5", fontWeight: "600" }}>
+          📚 {totalStudents} Student{totalStudents > 1 ? 's' : ''} • ⚠️ {atRiskCount} At Risk
+        </Text>
       </View>
 
-      {/* NOTIFICATIONS CARD */}
       <TouchableOpacity
         onPress={() => router.push("/notification")}
         style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#ef4444" }]}
@@ -86,7 +93,7 @@ export default function Parent() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <View>
             <Text style={styles.title}>🔔 Notifications</Text>
-            <Text style={styles.desc}>Attendance alerts from school</Text>
+            <Text style={styles.desc}>Academic & attendance alerts</Text>
           </View>
           {unreadCount > 0 && (
             <View style={{
@@ -103,32 +110,29 @@ export default function Parent() {
         </View>
       </TouchableOpacity>
 
-      {/* STUDENT ATTENDANCE */}
       <TouchableOpacity
         onPress={() => router.push("/attendance")}
         style={styles.card}
       >
         <Text style={styles.title}>📊 Student Attendance</Text>
-        <Text style={styles.desc}>Check student daily attendance record</Text>
+        <Text style={styles.desc}>Check daily attendance record</Text>
       </TouchableOpacity>
 
-      {/* ACADEMIC PERFORMANCE */}
       <TouchableOpacity
         onPress={() => router.push("/performance")}
         style={styles.card}
       >
         <Text style={styles.title}>📘 Academic Performance</Text>
-        <Text style={styles.desc}>Midterm, Final marks & GPA report</Text>
+        <Text style={styles.desc}>GPA, CGPA & risk status</Text>
       </TouchableOpacity>
 
-      {/* LOGOUT */}
       <TouchableOpacity
         onPress={async () => { await logout(); router.replace("/login"); }}
         style={{
           backgroundColor: "#e74c3c",
           padding: 15,
           borderRadius: 12,
-          marginTop: 30,       // ← moved up from "auto"
+          marginTop: 30,
           alignItems: "center",
         }}
       >
