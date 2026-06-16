@@ -81,7 +81,7 @@ export default function AttendanceScreen() {
     setLoading(true);
     setError(null);
     try {
-      if (!user?.studentGrade || !user?.studentId) {
+      if (!user?.students || user.students.length === 0) {
         setError("Student info missing. Please log out and log in again.");
         setLoading(false);
         return;
@@ -125,8 +125,8 @@ export default function AttendanceScreen() {
   const monthName = new Date(Number(y), Number(m) - 1, 1)
     .toLocaleString("default", { month: "long", year: "numeric" });
 
-  const studentName = user?.studentName || "Your Child";
-  const grade = user?.studentGrade || "";
+  const studentName = user?.students[0]?.name || "Your Child";
+  const grade = user?.students[0]?.grade || "";
   const presentDays = records.filter((r) => r.present).length;
   const totalDays = daysInMonth(month);
   const atRisk = percent < 75;
