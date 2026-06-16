@@ -7,11 +7,11 @@ app.use(cors());
 app.use(express.json());
 
 const db = mysql.createPool({
-  host: process.env.DB_HOST || 'acela.proxy.rlwy.net',
-  port: process.env.DB_PORT || 24740,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'zoqaEdIiQnZvgsbggFowIUvGWDZXlRJk',
-  database: process.env.MYSQLDATABASE || process.env.DB_NAME || 'my_project_db',
+  host: process.env.MYSQLHOST || 'MySQL.railway.internal',
+  port: process.env.MYSQLPORT || 3306,
+  user: process.env.MYSQLUSER || 'root',
+  password: process.env.MYSQLPASSWORD || 'zoqaEdIiQnZvgsbggFowIUvGWDZXlRJk',
+  database: process.env.MYSQLDATABASE || 'railway',
   waitForConnections: true,
   connectionLimit: 5,
 }).promise();
