@@ -53,8 +53,8 @@ export const AuthProvider = ({ children }: any) => {
 
   const login = async (phone: string, password: string) => {
     try {
-      // ✅ CORRECTED URL: /api/login (not /api/parent/login)
-      const res = await fetch(`${BASE_URL}/api/login`, {
+      // ✅ CORRECTED URL: /api/parent/login (not /api/parent/login)
+      const res = await fetch(`${BASE_URL}/api/parent/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, password }),
