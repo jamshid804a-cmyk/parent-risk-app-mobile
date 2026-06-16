@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2');
 const app = express();
@@ -65,7 +65,7 @@ app.get('/api/notifications', async (req, res) => {
 app.put('/api/notifications', async (req, res) => {
   const { id } = req.body;
   try {
-    await db.query('UPDATE notifications SET readStatus = true WHERE id = ?', [id]);
+    await db.query('UPDATE notifications SET read_status = 1 WHERE id = ?', [id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
