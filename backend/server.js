@@ -89,4 +89,28 @@ app.listen(PORT, '0.0.0.0', () => {
 
 module.exports = app;
 
-// force redeploy
+
+app.get('/api/debug', async (req, res) => {
+  try {
+    const [r1] = await db.query('SELECT DATABASE() as db');
+    const [r2] = await db.query('SELECT * FROM students WHERE id = 1');
+    const [r3] = await db.query('SELECT * FROM parents WHERE phone = ?', ['03058717008']);
+    res.json({ database: r1, students: r2, parents: r3 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+app.get('/api/debug', async (req, res) => {
+  try {
+    const [r1] = await db.query('SELECT DATABASE() as db');
+    const [r2] = await db.query('SELECT * FROM students WHERE id = 1');
+    const [r3] = await db.query('SELECT * FROM parents WHERE phone = ?', ['03058717008']);
+    res.json({ database: r1, students: r2, parents: r3 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
