@@ -67,6 +67,9 @@ export default function Notification() {
 
   function handleTap(notification: any) {
     markAsRead(notification.id);
+    setNotifications(prev =>
+      prev.map((n: any) => n.id === notification.id ? { ...n, read_status: 1 } : n)
+    );
     if (notification.type === "academic") {
       router.push("/performance");
     } else {

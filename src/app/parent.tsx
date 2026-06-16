@@ -30,7 +30,7 @@ export default function Parent() {
         `${BASE_URL}/api/notifications?studentId=${user?.students?.[0]?.id}`
       );
       const data = await res.json();
-      const unread = data.filter((n: any) => !n.readStatus).length;
+      const unread = data.filter((n: any) => !n.read_status).length;
       setUnreadCount(unread);
     } catch (e) {
       console.log("Failed to fetch notifications:", e);
