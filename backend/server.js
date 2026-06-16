@@ -22,7 +22,7 @@ app.post('/api/parent/login', async (req, res) => {
     const [results] = await db.query('SELECT * FROM parents WHERE phone = ? AND password = ?', [phone, password]);
     if (results.length > 0) {
       const parent = results[0];
-      const [studentResults] = await db.query('SELECT id, name, grade, gpa, cgpa, risk FROM students WHERE phone = ?', [phone]);
+      const [studentResults] = await db.query('SELECT id, name, grade, gpa, cgpa, risk FROM students WHERE id = ?', [phone]);
       res.json({ success: true, parentId: parent.id, students: studentResults || [], phone: phone });
     } else {
       res.status(401).json({ error: 'Invalid credentials' });
