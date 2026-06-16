@@ -15,14 +15,21 @@ const db = mysql.createPool({
   connectionLimit: 5,
 }).promise();
 
+// LOGIN - returns only at-risk students
 app.post('/api/parent/login', async (req, res) => {
   const { phone, password } = req.body;
   try {
-    const [results] = await db.query('SELECT * FROM parents WHERE phone = ? AND password = ?', [phone, password]);
+    const [results] = await db.query(
+      'SELECT * FROM parents WHERE phone = ? AND password = ?',
+      [phone, password]
+    );
     if (results.length > 0) {
       const parent = results[0];
-      const sid = parseInt(parent.studentId, 10);
-      const [studentResults] = await db.query('SELECT id, name, grade, gpa, cgpa, risk FROM students WHERE id = ?', [sid]);
+      const [studentResults] = await db.query(
+        `SELECT id, name, grade, gpa, cgpa, risk FROM students 
+         WHERE phone = ? AND (CAST(cgpa AS DECIMAL(4,2)) < 2.5 OR risk = 'at-risk')`,
+        [phone]
+      );
       res.json({ success: true, parentId: parent.id, students: studentResults || [], phone: phone });
     } else {
       res.status(401).json({ error: 'Invalid credentials' });
@@ -32,6 +39,7 @@ app.post('/api/parent/login', async (req, res) => {
   }
 });
 
+// GET SINGLE STUDENT
 app.get('/api/parent/student', async (req, res) => {
   const { studentId } = req.query;
   try {
@@ -42,26 +50,35 @@ app.get('/api/parent/student', async (req, res) => {
   }
 });
 
+// GET ATTENDANCE - only at-risk attendance (less than 75%)
 app.get('/api/attendance', async (req, res) => {
   const { studentId } = req.query;
   try {
-    const [results] = await db.query('SELECT * FROM attendance WHERE studentId = ?', [parseInt(studentId, 10)]);
+    const [results] = await db.query(
+      'SELECT * FROM attendance WHERE studentId = ?',
+      [parseInt(studentId, 10)]
+    );
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// GET NOTIFICATIONS
 app.get('/api/notifications', async (req, res) => {
   const { studentId } = req.query;
   try {
-    const [results] = await db.query('SELECT * FROM notifications WHERE studentId = ? ORDER BY id DESC', [parseInt(studentId, 10)]);
+    const [results] = await db.query(
+      'SELECT * FROM notifications WHERE studentId = ? ORDER BY id DESC',
+      [parseInt(studentId, 10)]
+    );
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// UPDATE NOTIFICATION
 app.put('/api/notifications', async (req, res) => {
   const { id } = req.body;
   try {
@@ -72,6 +89,7 @@ app.put('/api/notifications', async (req, res) => {
   }
 });
 
+// DELETE NOTIFICATION
 app.delete('/api/notifications', async (req, res) => {
   const { id } = req.query;
   try {
