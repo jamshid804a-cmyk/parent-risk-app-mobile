@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
 
-const BASE_URL = "https://parentriskapp-backend.vercel.app";
+const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
 
 interface AttendanceRecord {
   name: string;
