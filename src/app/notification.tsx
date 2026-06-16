@@ -11,13 +11,14 @@ export default function Notification() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user?.studentId) fetchNotifications();
+    if (user?.students && user.students.length > 0) fetchNotifications();
   }, [user]);
 
   async function fetchNotifications() {
     try {
+      const studentId = user?.students[0]?.id;
       const res = await fetch(
-        `${BASE_URL}/api/notifications?studentId=${user?.studentId}`
+        `${BASE_URL}/api/notifications?studentId=${studentId}`
       );
       const data = await res.json();
       setNotifications(data.reverse());
@@ -75,13 +76,7 @@ export default function Notification() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#f4f6f8" }}>
-
-      <View style={{
-        backgroundColor: "#fff",
-        padding: 20,
-        paddingTop: 55,
-        elevation: 3,
-      }}>
+      <View style={{ backgroundColor: "#fff", padding: 20, paddingTop: 55, elevation: 3 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={{ fontSize: 22 }}>←</Text>
@@ -97,40 +92,18 @@ export default function Notification() {
       ) : (
         <ScrollView style={{ padding: 16 }}>
           {notifications.length === 0 ? (
-            <View style={{
-              backgroundColor: "#fff",
-              padding: 20,
-              borderRadius: 15,
-              marginTop: 20,
-              elevation: 2,
-              borderLeftWidth: 4,
-              borderLeftColor: "#3b82f6",
-            }}>
+            <View style={{ backgroundColor: "#fff", padding: 20, borderRadius: 15, marginTop: 20, elevation: 2, borderLeftWidth: 4, borderLeftColor: "#3b82f6" }}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: "#1e3a5f" }}>
-                📋 Attendance Reminder
+                No Notifications
               </Text>
               <Text style={{ color: "gray", marginTop: 8, lineHeight: 22 }}>
-                Please check your child's attendance record in the{" "}
-                <Text style={{ fontWeight: "bold", color: "#3b82f6" }}>Attendance</Text>{" "}
-                section to stay updated on their daily presence at school.
+                You have no notifications at this time.
               </Text>
-              <TouchableOpacity
-                onPress={() => router.push("/attendance")}
-                style={{
-                  marginTop: 15,
-                  backgroundColor: "#3b82f6",
-                  padding: 12,
-                  borderRadius: 10,
-                  alignItems: "center",
-                }}
-              >
-                <Text style={{ color: "#fff", fontWeight: "bold" }}>Go to Attendance</Text>
-              </TouchableOpacity>
             </View>
           ) : (
             notifications.map((n: any) => {
               const isAcademic = n.type === "academic";
-              const isUnread = !n.readStatus;
+              const isUnread = !n.read_status;
               return (
                 <View
                   key={n.id}
@@ -151,24 +124,13 @@ export default function Notification() {
                       </Text>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                         {isUnread && (
-                          <View style={{
-                            backgroundColor: "#ef4444",
-                            borderRadius: 10,
-                            paddingHorizontal: 8,
-                            paddingVertical: 2,
-                          }}>
+                          <View style={{ backgroundColor: "#ef4444", borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
                             <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>NEW</Text>
                           </View>
                         )}
                         <TouchableOpacity
                           onPress={() => deleteNotification(n.id)}
-                          style={{
-                            backgroundColor: "#fef2f2",
-                            borderRadius: 8,
-                            padding: 6,
-                            borderWidth: 1,
-                            borderColor: "#fca5a5",
-                          }}
+                          style={{ backgroundColor: "#fef2f2", borderRadius: 8, padding: 6, borderWidth: 1, borderColor: "#fca5a5" }}
                         >
                           <Text style={{ fontSize: 14 }}>🗑️</Text>
                         </TouchableOpacity>
