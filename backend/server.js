@@ -15,7 +15,7 @@ const db = mysql.createPool({
   connectionLimit: 5,
 }).promise();
 
-// LOGIN - returns only at-risk students
+// LOGIN - returns students with academic or attendance risk
 app.post('/api/parent/login', async (req, res) => {
   const { phone, password } = req.body;
   try {
@@ -26,8 +26,13 @@ app.post('/api/parent/login', async (req, res) => {
     if (results.length > 0) {
       const parent = results[0];
       const [studentResults] = await db.query(
-        `SELECT id, name, grade, gpa, cgpa, risk FROM students 
-         WHERE phone = ? AND (CAST(cgpa AS DECIMAL(4,2)) < 2.5 OR risk = 'at-risk')`,
+        `SELECT s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk,
+          ROUND(COALESCE(SUM(a.present) / NULLIF(COUNT(a.id), 0) * 100, 100), 0) as attendancePercent
+         FROM students s
+         LEFT JOIN attendance a ON s.id = a.studentId
+         WHERE s.phone = ?
+         GROUP BY s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk
+         HAVING CAST(s.cgpa AS DECIMAL(4,2)) < 2.5 OR attendancePercent < 75`,
         [phone]
       );
       res.json({ success: true, parentId: parent.id, students: studentResults || [], phone: phone });
@@ -50,7 +55,7 @@ app.get('/api/parent/student', async (req, res) => {
   }
 });
 
-// GET ATTENDANCE - only at-risk attendance (less than 75%)
+// GET ATTENDANCE
 app.get('/api/attendance', async (req, res) => {
   const { studentId } = req.query;
   try {
