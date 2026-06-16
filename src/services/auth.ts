@@ -7,7 +7,7 @@ import {
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
 
-const BASE_URL = "http://192.168.18.137:3000/api";
+const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app/api";
 
 export default function Performance() {
 
