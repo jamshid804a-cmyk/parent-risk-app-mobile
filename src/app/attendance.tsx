@@ -12,11 +12,9 @@ import { useAuth } from "../context/AuthContext";
 const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
 
 interface AttendanceRecord {
-  name: string;
   present: boolean;
   day: number;
   date: string;
-  grade: string;
   studentId: number;
 }
 
@@ -86,14 +84,12 @@ export default function AttendanceScreen() {
         setLoading(false);
         return;
       }
-      const url = `${BASE_URL}/api/attendance?grade=${encodeURIComponent(user.studentGrade)}&month=${encodeURIComponent(month)}`;
+      const studentId = user.students[0].id;
+      const url = `${BASE_URL}/api/attendance?studentId=${studentId}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const allRecords: AttendanceRecord[] = await res.json();
-      const myRecords = allRecords.filter(
-        (r) => Number(r.studentId) === Number(user.studentId)
-      );
-      const validRecords = myRecords.filter((r) => r.day > 0);
+      const validRecords = allRecords.filter((r) => r.day > 0);
       setRecords(validRecords);
       setWeeks(buildWeeks(validRecords, month));
       setPercent(calcPercent(validRecords, month));
@@ -108,7 +104,7 @@ export default function AttendanceScreen() {
     return (
       <SafeAreaView style={styles.center}>
         <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Loading attendance…</Text>
+        <Text style={styles.loadingText}>Loading attendance...</Text>
       </SafeAreaView>
     );
   }
@@ -135,23 +131,21 @@ export default function AttendanceScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
-
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>📊 Student Attendance</Text>
+          <Text style={styles.headerTitle}>Student Attendance</Text>
           <Text style={styles.headerSub}>
-            {studentName}{grade ? ` · Grade ${grade}` : ""}
+            {studentName}{grade ? ` - Grade ${grade}` : ""}
           </Text>
           <Text style={styles.monthLabel}>{monthName}</Text>
         </View>
 
         <View style={[styles.banner, atRisk ? styles.bannerRisk : styles.bannerGood]}>
-          <Text style={styles.bannerIcon}>{atRisk ? "⚠️" : "✅"}</Text>
           <View style={{ flex: 1 }}>
             <Text style={[styles.bannerTitle, atRisk ? styles.riskText : styles.goodText]}>
               {atRisk ? "At-Risk Student" : "Good Attendance"}
             </Text>
             <Text style={[styles.bannerSub, atRisk ? styles.riskSubText : styles.goodSubText]}>
-              {studentName} — {percent}% this month
+              {studentName} - {percent}% this month
               {atRisk ? ". Below 75% threshold." : ". Keep it up!"}
             </Text>
           </View>
@@ -166,24 +160,15 @@ export default function AttendanceScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.studentName}>{studentName}</Text>
-              <Text style={styles.studentGrade}>
-                {grade ? `Grade ${grade}` : ""}
-              </Text>
+              <Text style={styles.studentGrade}>{grade ? `Grade ${grade}` : ""}</Text>
             </View>
             <View style={{ alignItems: "flex-end" }}>
               <Text style={styles.percentBig}>{percent}%</Text>
               <Text style={styles.daysSmall}>{presentDays}/{totalDays} days present</Text>
             </View>
           </View>
-
           <View style={styles.barBg}>
-            <View
-              style={[
-                styles.barFill,
-                { width: `${percent}%` as any, backgroundColor: atRisk ? "#ef4444" : "#22c55e" },
-              ]}
-            />
-            <View style={styles.barMarker} />
+            <View style={[styles.barFill, { width: `${percent}%` as any, backgroundColor: atRisk ? "#ef4444" : "#22c55e" }]} />
           </View>
           <View style={styles.barLabels}>
             <Text style={styles.barLabel}>0%</Text>
@@ -205,54 +190,33 @@ export default function AttendanceScreen() {
                 <View key={week.weekLabel} style={styles.weekBlock}>
                   <View style={styles.weekHeader}>
                     <Text style={styles.weekLabel}>{week.weekLabel}</Text>
-                    <Text style={styles.weekRange}>Days {week.weekStart}–{week.weekEnd}</Text>
+                    <Text style={styles.weekRange}>Days {week.weekStart}-{week.weekEnd}</Text>
                     <Text style={[styles.weekPercent, { color: wAtRisk ? "#ef4444" : "#22c55e" }]}>
                       {wPercent}%
                     </Text>
                   </View>
                   <View style={styles.dotsRow}>
                     {week.days.map((d) => (
-                      <View
-                        key={d.day}
-                        style={[styles.dayDot, { backgroundColor: d.present ? "#22c55e" : "#e5e7eb" }]}
-                      >
+                      <View key={d.day} style={[styles.dayDot, { backgroundColor: d.present ? "#22c55e" : "#e5e7eb" }]}>
                         <Text style={[styles.dayDotText, { color: d.present ? "#fff" : "#6b7280" }]}>
                           {d.day}
                         </Text>
                       </View>
                     ))}
                   </View>
-                  {wAtRisk && (
-                    <View style={styles.weekWarning}>
-                      <Text style={styles.weekWarningText}>
-                        ⚠️ Needs {75 - wPercent}% more to reach 75% threshold
-                      </Text>
-                    </View>
-                  )}
                 </View>
               );
             })
           )}
-          <View style={styles.legend}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: "#22c55e" }]} />
-              <Text style={styles.legendText}>Present</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: "#e5e7eb" }]} />
-              <Text style={styles.legendText}>Absent</Text>
-            </View>
-          </View>
         </View>
 
         {atRisk && (
           <View style={styles.warningCard}>
             <Text style={styles.warningText}>
-              ⚠️ Needs {needsMore}% more to reach 75% threshold
+              Needs {needsMore}% more to reach 75% threshold
             </Text>
           </View>
         )}
-
       </ScrollView>
     </SafeAreaView>
   );
@@ -269,7 +233,6 @@ const styles = StyleSheet.create({
   banner: { flexDirection: "row", alignItems: "flex-start", borderRadius: 12, padding: 14, gap: 10, borderWidth: 1 },
   bannerRisk: { backgroundColor: "#fef2f2", borderColor: "#fca5a5" },
   bannerGood: { backgroundColor: "#f0fdf4", borderColor: "#86efac" },
-  bannerIcon: { fontSize: 22, marginTop: 1 },
   bannerTitle: { fontSize: 15, fontWeight: "700" },
   bannerSub: { fontSize: 13, marginTop: 3, lineHeight: 18 },
   riskText: { color: "#b91c1c" },
@@ -285,9 +248,8 @@ const styles = StyleSheet.create({
   studentGrade: { fontSize: 13, color: "#64748b", marginTop: 2 },
   percentBig: { fontSize: 24, fontWeight: "700", color: "#ef4444" },
   daysSmall: { fontSize: 11, color: "#94a3b8" },
-  barBg: { height: 10, backgroundColor: "#e2e8f0", borderRadius: 5, overflow: "visible", position: "relative", marginBottom: 4 },
+  barBg: { height: 10, backgroundColor: "#e2e8f0", borderRadius: 5, marginBottom: 4 },
   barFill: { height: "100%", borderRadius: 5 },
-  barMarker: { position: "absolute", left: "75%" as any, top: 0, width: 2, height: "100%", backgroundColor: "#fb923c" },
   barLabels: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
   barLabel: { fontSize: 10, color: "#94a3b8" },
   barMarkerLabel: { fontSize: 10, color: "#f97316", fontWeight: "600" },
@@ -299,12 +261,6 @@ const styles = StyleSheet.create({
   dotsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   dayDot: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   dayDotText: { fontSize: 10, fontWeight: "600" },
-  weekWarning: { marginTop: 8, backgroundColor: "#fef2f2", borderRadius: 8, padding: 8 },
-  weekWarningText: { fontSize: 12, color: "#dc2626", fontWeight: "500" },
-  legend: { flexDirection: "row", gap: 16, marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#f1f5f9" },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-  legendDot: { width: 14, height: 14, borderRadius: 7 },
-  legendText: { fontSize: 12, color: "#64748b" },
   warningCard: { backgroundColor: "#fef2f2", borderRadius: 12, padding: 14, borderWidth: 1, borderColor: "#fca5a5" },
   warningText: { fontSize: 13, color: "#dc2626", fontWeight: "600" },
   emptyText: { fontSize: 14, color: "#94a3b8", textAlign: "center", paddingVertical: 12 },
