@@ -1,6 +1,6 @@
-import { router, useFocusEffect } from "expo-router";
+﻿import { router, useFocusEffect } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 
 const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
@@ -8,13 +8,8 @@ const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app"
 export default function Parent() {
   const { user, logout } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
-  const [atRiskCount, setAtRiskCount] = useState(0);
 
   useEffect(() => {
-    if (user?.students) {
-      const riskCount = user.students.filter(s => (s.cgpa || 0) < 2.5).length;
-      setAtRiskCount(riskCount);
-    }
     if (user?.students?.[0]?.id) fetchUnreadCount();
   }, [user]);
 
@@ -40,123 +35,83 @@ export default function Parent() {
   const totalStudents = user?.students?.length || 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#f4f6f8", padding: 20 }}>
-
-      <View style={{
-        backgroundColor: "#fff",
-        padding: 20,
-        borderRadius: 15,
-        marginTop: 50,
-        elevation: 3,
-      }}>
+    <ScrollView style={{ flex: 1, backgroundColor: "#f4f6f8" }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+      <View style={{ backgroundColor: "#fff", padding: 20, borderRadius: 15, marginTop: 50, elevation: 3 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <Text style={{ fontSize: 22, fontWeight: "bold" }}>
-            👨‍👩‍👧 Parent Dashboard
-          </Text>
-          <TouchableOpacity
-            onPress={() => router.push("/notification")}
-            style={{ position: "relative", padding: 6 }}
-          >
+          <Text style={{ fontSize: 22, fontWeight: "bold" }}>Parent Dashboard</Text>
+          <TouchableOpacity onPress={() => router.push("/notification")} style={{ position: "relative", padding: 6 }}>
             <Text style={{ fontSize: 26 }}>🔔</Text>
             {unreadCount > 0 && (
-              <View style={{
-                position: "absolute",
-                top: 2,
-                right: 2,
-                backgroundColor: "#ef4444",
-                borderRadius: 10,
-                minWidth: 18,
-                height: 18,
-                alignItems: "center",
-                justifyContent: "center",
-                paddingHorizontal: 3,
-              }}>
-                <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>
-                  {unreadCount}
-                </Text>
+              <View style={{ position: "absolute", top: 2, right: 2, backgroundColor: "#ef4444", borderRadius: 10, minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 }}>
+                <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>{unreadCount}</Text>
               </View>
             )}
           </TouchableOpacity>
         </View>
-        <Text style={{ marginTop: 10, color: "gray" }}>
-          Welcome: {user?.phone}
-        </Text>
-        <Text style={{ marginTop: 5, color: "#4f46e5", fontWeight: "600" }}>
-          📚 {totalStudents} Student{totalStudents > 1 ? 's' : ''} • ⚠️ {atRiskCount} At Risk
+        <Text style={{ marginTop: 10, color: "gray" }}>Welcome: {user?.phone}</Text>
+        <Text style={{ marginTop: 5, color: "#ef4444", fontWeight: "600" }}>
+          ⚠️ {totalStudents} At-Risk Student{totalStudents > 1 ? "s" : ""}
         </Text>
       </View>
 
+      <Text style={{ fontSize: 16, fontWeight: "700", color: "#1e293b", marginTop: 20, marginBottom: 10 }}>
+        At-Risk Students
+      </Text>
+
+      {user?.students?.map((student: any) => (
+        <View key={student.id} style={{ backgroundColor: "#fff", borderRadius: 15, padding: 16, marginBottom: 12, elevation: 2, borderLeftWidth: 4, borderLeftColor: "#ef4444" }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <View>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: "#1e293b" }}>{student.name}</Text>
+              <Text style={{ color: "gray", marginTop: 4 }}>{student.grade}</Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={{ fontSize: 18, fontWeight: "700", color: "#ef4444" }}>CGPA: {student.cgpa}</Text>
+              <View style={{ backgroundColor: "#fef2f2", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 4 }}>
+                <Text style={{ color: "#ef4444", fontSize: 12, fontWeight: "700" }}>⚠️ AT RISK</Text>
+              </View>
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+            <TouchableOpacity
+              onPress={() => router.push({ pathname: "/performance", params: { studentId: student.id } })}
+              style={{ flex: 1, backgroundColor: "#4f46e5", padding: 10, borderRadius: 10, alignItems: "center" }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>📘 Performance</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push({ pathname: "/attendance", params: { studentId: student.id } })}
+              style={{ flex: 1, backgroundColor: "#0ea5e9", padding: 10, borderRadius: 10, alignItems: "center" }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>📊 Attendance</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ))}
+
       <TouchableOpacity
         onPress={() => router.push("/notification")}
-        style={[styles.card, { borderLeftWidth: 4, borderLeftColor: "#ef4444" }]}
+        style={{ backgroundColor: "#fff", padding: 20, borderRadius: 15, marginTop: 5, elevation: 2, borderLeftWidth: 4, borderLeftColor: "#ef4444" }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <View>
-            <Text style={styles.title}>🔔 Notifications</Text>
-            <Text style={styles.desc}>Academic & attendance alerts</Text>
+            <Text style={{ fontSize: 16, fontWeight: "600" }}>🔔 Notifications</Text>
+            <Text style={{ color: "gray", marginTop: 5 }}>Academic & attendance alerts</Text>
           </View>
           {unreadCount > 0 && (
-            <View style={{
-              backgroundColor: "#ef4444",
-              borderRadius: 12,
-              paddingHorizontal: 10,
-              paddingVertical: 4,
-            }}>
-              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>
-                {unreadCount} new
-              </Text>
+            <View style={{ backgroundColor: "#ef4444", borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 }}>
+              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>{unreadCount} new</Text>
             </View>
           )}
         </View>
       </TouchableOpacity>
 
       <TouchableOpacity
-        onPress={() => router.push("/attendance")}
-        style={styles.card}
-      >
-        <Text style={styles.title}>📊 Student Attendance</Text>
-        <Text style={styles.desc}>Check daily attendance record</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        onPress={() => router.push("/performance")}
-        style={styles.card}
-      >
-        <Text style={styles.title}>📘 Academic Performance</Text>
-        <Text style={styles.desc}>GPA, CGPA & risk status</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
         onPress={async () => { await logout(); router.replace("/login"); }}
-        style={{
-          backgroundColor: "#e74c3c",
-          padding: 15,
-          borderRadius: 12,
-          marginTop: 30,
-          alignItems: "center",
-        }}
+        style={{ backgroundColor: "#e74c3c", padding: 15, borderRadius: 12, marginTop: 20, alignItems: "center" }}
       >
         <Text style={{ color: "white", fontWeight: "bold" }}>Logout</Text>
       </TouchableOpacity>
-
-    </View>
+    </ScrollView>
   );
 }
-
-const styles = {
-  card: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 15,
-    marginTop: 15,
-    elevation: 2,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  desc: {
-    color: "gray",
-    marginTop: 5,
-  },
-};
