@@ -80,22 +80,18 @@ export default function Parent() {
               </View>
             </View>
             <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
-              {isAcademicRisk && (
-                <TouchableOpacity
-                  onPress={() => router.push({ pathname: "/performance", params: { studentId: student.id } })}
-                  style={{ flex: 1, backgroundColor: "#4f46e5", padding: 10, borderRadius: 10, alignItems: "center" }}
-                >
-                  <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>📘 Performance</Text>
-                </TouchableOpacity>
-              )}
-              {isAttendanceRisk && (
-                <TouchableOpacity
-                  onPress={() => router.push({ pathname: "/attendance", params: { studentId: student.id } })}
-                  style={{ flex: 1, backgroundColor: "#0ea5e9", padding: 10, borderRadius: 10, alignItems: "center" }}
-                >
-                  <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>📊 Attendance</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: "/performance", params: { studentId: student.id } })}
+                style={{ flex: 1, backgroundColor: "#4f46e5", padding: 10, borderRadius: 10, alignItems: "center" }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>📘 Performance</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: "/attendance", params: { studentId: student.id } })}
+                style={{ flex: 1, backgroundColor: "#0ea5e9", padding: 10, borderRadius: 10, alignItems: "center" }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>📊 Attendance</Text>
+              </TouchableOpacity>
             </View>
           </View>
         );

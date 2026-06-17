@@ -1,3 +1,4 @@
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -5,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
@@ -64,6 +66,18 @@ function calcPercent(records: AttendanceRecord[], month: string): number {
 
 export default function AttendanceScreen() {
   const { user } = useAuth();
+  const params = useLocalSearchParams<{ studentId?: string }>();
+  const rawId = Array.isArray(params.studentId) ? params.studentId[0] : params.studentId;
+  const studentIdNum = rawId ? Number(rawId) : null;
+
+  // Resolve the exact student that was tapped on the dashboard.
+  // Falls back to the first student only when no studentId was passed
+  // (e.g. older links), so nothing else breaks.
+  const student =
+    user?.students?.find((s: any) => s.id === studentIdNum) ||
+    (studentIdNum ? null : user?.students?.[0]) ||
+    null;
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [percent, setPercent] = useState(0);
@@ -73,7 +87,7 @@ export default function AttendanceScreen() {
 
   useEffect(() => {
     if (user) fetchAttendance();
-  }, [user]);
+  }, [user, studentIdNum]);
 
   async function fetchAttendance() {
     setLoading(true);
@@ -84,8 +98,12 @@ export default function AttendanceScreen() {
         setLoading(false);
         return;
       }
-      const studentId = user.students[0].id;
-      const url = `${BASE_URL}/api/attendance?studentId=${studentId}`;
+      if (!student) {
+        setError("Student not found.");
+        setLoading(false);
+        return;
+      }
+      const url = `${BASE_URL}/api/attendance?studentId=${student.id}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const allRecords: AttendanceRecord[] = await res.json();
@@ -121,8 +139,8 @@ export default function AttendanceScreen() {
   const monthName = new Date(Number(y), Number(m) - 1, 1)
     .toLocaleString("default", { month: "long", year: "numeric" });
 
-  const studentName = user?.students[0]?.name || "Your Child";
-  const grade = user?.students[0]?.grade || "";
+  const studentName = student?.name || "Your Child";
+  const grade = student?.grade || "";
   const presentDays = records.filter((r) => r.present).length;
   const totalDays = daysInMonth(month);
   const atRisk = percent < 75;
@@ -132,6 +150,9 @@ export default function AttendanceScreen() {
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Text style={styles.backBtnText}>← Back</Text>
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Student Attendance</Text>
           <Text style={styles.headerSub}>
             {studentName}{grade ? ` - Grade ${grade}` : ""}
@@ -227,6 +248,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },
   container: { padding: 16, gap: 12, paddingBottom: 32, paddingTop: 40 },
   header: { marginBottom: 4 },
+  backBtn: { marginBottom: 8 },
+  backBtnText: { fontSize: 15, color: "#2563eb", fontWeight: "600" },
   headerTitle: { fontSize: 24, fontWeight: "700", color: "#1e293b" },
   headerSub: { fontSize: 15, color: "#64748b", marginTop: 4 },
   monthLabel: { fontSize: 14, color: "#3b82f6", marginTop: 4, fontWeight: "600" },
