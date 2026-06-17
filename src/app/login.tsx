@@ -1,15 +1,23 @@
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useState } from "react";
 import {
-  StyleSheet, Text, TextInput,
-  TouchableOpacity, View, Alert, ActivityIndicator
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { router } from "expo-router";
 import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
   const { login } = useAuth();
+
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -17,14 +25,20 @@ export default function Login() {
       Alert.alert("Error", "Please enter phone and password");
       return;
     }
+
     setLoading(true);
+
     const result = await login(phone, password);
+
     setLoading(false);
 
     if (result.success) {
       router.replace("/parent");
     } else {
-      Alert.alert("Login Failed", result.error || "Invalid credentials");
+      Alert.alert(
+        "Login Failed",
+        result.error || "Invalid credentials"
+      );
     }
   };
 
@@ -36,7 +50,10 @@ export default function Login() {
       </View>
 
       <Text style={styles.title}>Parent Portal</Text>
-      <Text style={styles.subtitle}>Monitor your child's academic performance</Text>
+
+      <Text style={styles.subtitle}>
+        Monitor your child's academic performance
+      </Text>
 
       {/* Phone Input */}
       <TextInput
@@ -48,26 +65,42 @@ export default function Login() {
         keyboardType="phone-pad"
       />
 
-      {/* Password Input */}
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        placeholderTextColor="#9ca3af"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+      {/* Password Input with Eye Icon */}
+      <View style={styles.passwordContainer}>
+        <TextInput
+          style={styles.passwordInput}
+          placeholder="Password"
+          placeholderTextColor="#9ca3af"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry={!showPassword}
+        />
+
+        <TouchableOpacity
+          onPress={() => setShowPassword(!showPassword)}
+        >
+          <Ionicons
+            name={showPassword ? "eye-off" : "eye"}
+            size={24}
+            color="#6b7280"
+          />
+        </TouchableOpacity>
+      </View>
 
       {/* Login Button */}
       <TouchableOpacity
-        style={[styles.loginButton, loading && { opacity: 0.7 }]}
+        style={[
+          styles.loginButton,
+          loading && { opacity: 0.7 },
+        ]}
         onPress={handleLogin}
         disabled={loading}
       >
-        {loading
-          ? <ActivityIndicator color="white" />
-          : <Text style={styles.loginButtonText}>Login</Text>
-        }
+        {loading ? (
+          <ActivityIndicator color="white" />
+        ) : (
+          <Text style={styles.loginButtonText}>Login</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -81,34 +114,81 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 25,
   },
+
   logoContainer: {
-    width: 120, height: 120, borderRadius: 60,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     backgroundColor: "#2563eb",
-    justifyContent: "center", alignItems: "center",
+    justifyContent: "center",
+    alignItems: "center",
     elevation: 8,
   },
-  logo: { fontSize: 55 },
+
+  logo: {
+    fontSize: 55,
+  },
+
   title: {
-    marginTop: 35, fontSize: 32,
-    fontWeight: "700", color: "#111827", textAlign: "center",
+    marginTop: 35,
+    fontSize: 32,
+    fontWeight: "700",
+    color: "#111827",
+    textAlign: "center",
   },
+
   subtitle: {
-    marginTop: 12, fontSize: 16,
-    color: "#6b7280", textAlign: "center", lineHeight: 24,
+    marginTop: 12,
+    fontSize: 16,
+    color: "#6b7280",
+    textAlign: "center",
+    lineHeight: 24,
   },
+
   input: {
-    width: "100%", backgroundColor: "#fff",
-    borderWidth: 1, borderColor: "#e5e7eb",
-    borderRadius: 14, padding: 16,
-    fontSize: 16, color: "#111827", marginTop: 16,
+    width: "100%",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    padding: 16,
+    fontSize: 16,
+    color: "#111827",
+    marginTop: 16,
   },
+
+  passwordContainer: {
+    width: "100%",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    marginTop: 16,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  passwordInput: {
+    flex: 1,
+    paddingVertical: 16,
+    fontSize: 16,
+    color: "#111827",
+  },
+
   loginButton: {
-    backgroundColor: "#2563eb", width: "100%",
-    paddingVertical: 18, borderRadius: 18,
-    marginTop: 24, elevation: 6,
+    backgroundColor: "#2563eb",
+    width: "100%",
+    paddingVertical: 18,
+    borderRadius: 18,
+    marginTop: 24,
+    elevation: 6,
   },
+
   loginButtonText: {
-    color: "white", fontSize: 18,
-    fontWeight: "700", textAlign: "center",
+    color: "white",
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
   },
 });
