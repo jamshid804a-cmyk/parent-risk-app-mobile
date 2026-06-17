@@ -4,27 +4,24 @@ const mysql = require("mysql2");
 
 const app = express();
 
-// =========================
-// MIDDLEWARE
-// =========================
 app.use(cors());
 app.use(express.json());
 
 // =========================
-// DATABASE (RAILWAY SAFE)
+// MYSQL CONNECTION (FIXED)
 // =========================
 const db = mysql.createPool({
-  host: process.env.MYSQLHOST || "MySQL.railway.internal",
-  port: process.env.MYSQLPORT || 3306,
-  user: process.env.MYSQLUSER || "root",
-  password: process.env.MYSQLPASSWORD || "password",
-  database: process.env.MYSQLDATABASE || "railway",
+  MYSQLHOST: "mysql.railway.internal",
+  MYSQLUSER: "root",
+  MYSQLPASSWORD: "zoqaEdIiQnZvgsbggFowIUvGWDZXlRJk",
+  MYSQLDATABASE: "railway",
+  MYSQLPORT: 3306,
   waitForConnections: true,
   connectionLimit: 10,
 }).promise();
 
 // =========================
-// LOGIN API (MAIN LOGIC)
+// LOGIN API
 // =========================
 app.post("/api/parent/login", async (req, res) => {
   const { phone, password } = req.body;
@@ -32,7 +29,7 @@ app.post("/api/parent/login", async (req, res) => {
   try {
     console.log("LOGIN ATTEMPT:", phone);
 
-    // 1. FIND STUDENT BY CONTACT
+    // 1. CHECK STUDENT FIRST
     const [studentRows] = await db.query(
       "SELECT * FROM students WHERE contact = ?",
       [phone]
@@ -47,7 +44,7 @@ app.post("/api/parent/login", async (req, res) => {
 
     const student = studentRows[0];
 
-    // 2. CHECK IF PARENT EXISTS
+    // 2. CHECK PARENT
     const [parentRows] = await db.query(
       "SELECT * FROM parents WHERE phone = ?",
       [phone]
@@ -72,7 +69,7 @@ app.post("/api/parent/login", async (req, res) => {
     } else {
       parent = parentRows[0];
 
-      // PASSWORD CHECK ONLY IF EXISTING PARENT
+      // password check
       if (parent.password !== password) {
         return res.status(401).json({
           success: false,
@@ -81,7 +78,7 @@ app.post("/api/parent/login", async (req, res) => {
       }
     }
 
-    // 3. GET STUDENT DATA (SAFE VERSION)
+    // 3. GET STUDENT DATA (SAFE)
     const [studentData] = await db.query(
       `
       SELECT 
@@ -106,7 +103,7 @@ app.post("/api/parent/login", async (req, res) => {
       [student.id]
     );
 
-    // 4. RESPONSE
+    // RESPONSE
     return res.json({
       success: true,
       parentId: parent.id,
@@ -125,7 +122,7 @@ app.post("/api/parent/login", async (req, res) => {
 });
 
 // =========================
-// START SERVER
+// SERVER START
 // =========================
 const PORT = process.env.PORT || 3000;
 
