@@ -11,11 +11,11 @@ app.use(express.json());
 // MYSQL CONNECTION (FIXED)
 // =========================
 const db = mysql.createPool({
-  host: "mysql.railway.internal",
-  user: "root",
-  password: "zoqaEdIiQnZvgsbggFowIUvGWDZXlRJk",
-  database: "my_project_db",
-  port: 3306,
+  MYSQLHOST: "mysql.railway.internal",
+  MYSQLUSER: "root",
+  MYSQLPASSWORD: "zoqaEdIiQnZvgsbggFowIUvGWDZXlRJk",
+  MYSQLDATABASE: "railway",
+  MYSQLPORT: 3306,
   waitForConnections: true,
   connectionLimit: 10,
 }).promise();
