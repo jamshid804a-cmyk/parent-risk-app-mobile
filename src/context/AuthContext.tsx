@@ -19,14 +19,16 @@ type User = {
 
 type AuthContextType = {
   user: User | null;
-  login: (phone: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  requestOtp: (phone: string) => Promise<{ success: boolean; error?: string }>;
+  verifyOtp: (phone: string, otp: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   loading: boolean;
 };
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
-  login: async () => ({ success: false }),
+  requestOtp: async () => ({ success: false }),
+  verifyOtp: async () => ({ success: false }),
   logout: async () => {},
   loading: true,
 });
@@ -52,20 +54,36 @@ export const AuthProvider = ({ children }: any) => {
     }
   };
 
-  const login = async (phone: string, password: string) => {
+  // ✅ Request OTP
+  const requestOtp = async (phone: string) => {
     try {
-      // ✅ CORRECTED URL: /api/parent/login (not /api/parent/login)
-      const res = await fetch(`${BASE_URL}/api/parent/login`, {
+      const res = await fetch(`${BASE_URL}/api/parent/request-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, password }),
+        body: JSON.stringify({ phone }),
       });
 
       const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || "Failed to send OTP" };
 
-      if (!res.ok) return { success: false, error: data.error || "Invalid credentials" };
+      return { success: true };
+    } catch (error) {
+      console.log("Request OTP error:", error);
+      return { success: false, error: "Cannot connect to server. Check your WiFi." };
+    }
+  };
 
-      console.log("Login response:", JSON.stringify(data, null, 2));
+  // ✅ Verify OTP
+  const verifyOtp = async (phone: string, otp: string) => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/parent/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, otp }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || "Invalid OTP" };
 
       const newUser: User = {
         parentId: data.parentId,
@@ -77,7 +95,7 @@ export const AuthProvider = ({ children }: any) => {
       await AsyncStorage.setItem("user", JSON.stringify(newUser));
       return { success: true };
     } catch (error) {
-      console.log("Login error:", error);
+      console.log("Verify OTP error:", error);
       return { success: false, error: "Cannot connect to server. Check your WiFi." };
     }
   };
@@ -88,7 +106,7 @@ export const AuthProvider = ({ children }: any) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, requestOtp, verifyOtp, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
