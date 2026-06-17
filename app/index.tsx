@@ -1,7 +1,7 @@
-import { useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
 import { router } from "expo-router";
-import { View, Text } from "react-native";
+import { useEffect } from "react";
+import { Text, View } from "react-native";
+import { useAuth } from "../src/context/AuthContext";
 
 export default function Home() {
   const { user, loading } = useAuth();

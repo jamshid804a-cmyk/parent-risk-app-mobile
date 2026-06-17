@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../src/context/AuthContext";
 
 export default function Performance() {
   const { user, loading: authLoading } = useAuth();

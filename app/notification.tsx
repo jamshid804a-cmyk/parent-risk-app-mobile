@@ -1,7 +1,7 @@
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../src/context/AuthContext";
 
 const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
 
