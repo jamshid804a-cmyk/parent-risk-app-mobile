@@ -15,30 +15,42 @@ const db = mysql.createPool({
   connectionLimit: 10,
 }).promise();
 
-// ✅ OTP Request
+// ✅ Request OTP
 app.post("/api/parent/request-otp", async (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ success: false, error: "Phone required" });
 
-  // Generate 6-digit OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  // TODO: Save OTP in DB/cache and send via SMS/WhatsApp
-  console.log(`Generated OTP ${otp} for phone ${phone}`);
+  try {
+    // Save OTP in MySQL
+    await db.query("INSERT INTO otps (phone, otp) VALUES (?, ?)", [phone, otp]);
 
-  res.json({ success: true });
+    console.log(`Saved OTP ${otp} for phone ${phone}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("REQUEST OTP ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-// ✅ OTP Verify
+// ✅ Verify OTP
 app.post("/api/parent/verify-otp", async (req, res) => {
   const { phone, otp } = req.body;
   if (!phone || !otp) return res.status(400).json({ success: false, error: "Phone and OTP required" });
 
-  // TODO: Validate OTP from DB/cache
-  const isValid = true; // Replace with real check
-  if (!isValid) return res.status(401).json({ success: false, error: "Invalid OTP" });
-
   try {
+    // Check OTP from MySQL (latest entry)
+    const [rows] = await db.query(
+      "SELECT * FROM otps WHERE phone = ? AND otp = ? ORDER BY created_at DESC LIMIT 1",
+      [phone, otp]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(401).json({ success: false, error: "Invalid OTP" });
+    }
+
+    // Fetch parent + student data
     const [studentRows] = await db.query("SELECT * FROM students WHERE contact = ?", [phone]);
     const students = studentRows || [];
 
