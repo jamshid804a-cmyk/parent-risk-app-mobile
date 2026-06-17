@@ -1,4 +1,3 @@
-import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
@@ -13,29 +12,31 @@ import {
 import { useAuth } from "../src/context/AuthContext";
 
 export default function Login() {
-  const { login } = useAuth();
-
+  const { requestOtp } = useAuth(); // new function in AuthContext
   const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!phone || !password) {
-      Alert.alert("Error", "Please enter phone and password");
+    if (!phone) {
+      Alert.alert("Error", "Please enter phone number");
       return;
     }
 
     setLoading(true);
 
-    const result = await login(phone.trim(), password);
+    // Step 1: Ask backend to send OTP
+    const result = await requestOtp(phone.trim());
 
     setLoading(false);
 
     if (result.success) {
-      router.replace("/parent");
+      // Step 2: Go to OTP verification screen
+      router.push({
+        pathname: "/verify-otp",
+        params: { phone: phone.trim() },
+      });
     } else {
-      Alert.alert("Login Failed", result.error || "Invalid credentials");
+      Alert.alert("Login Failed", result.error || "Invalid number");
     }
   };
 
@@ -61,28 +62,6 @@ export default function Login() {
         keyboardType="phone-pad"
       />
 
-      {/* Password */}
-      <View style={styles.passwordContainer}>
-        <TextInput
-          style={styles.passwordInput}
-          placeholder="Password"
-          placeholderTextColor="#9ca3af"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={!showPassword}
-        />
-
-        <TouchableOpacity
-          onPress={() => setShowPassword(!showPassword)}
-        >
-          <Ionicons
-            name={showPassword ? "eye-off" : "eye"}
-            size={24}
-            color="#6b7280"
-          />
-        </TouchableOpacity>
-      </View>
-
       {/* Login Button */}
       <TouchableOpacity
         style={[styles.loginButton, loading && { opacity: 0.7 }]}
@@ -92,7 +71,7 @@ export default function Login() {
         {loading ? (
           <ActivityIndicator color="white" />
         ) : (
-          <Text style={styles.loginButtonText}>Login</Text>
+          <Text style={styles.loginButtonText}>Send OTP</Text>
         )}
       </TouchableOpacity>
     </View>
@@ -143,24 +122,6 @@ const styles = StyleSheet.create({
     padding: 16,
     fontSize: 16,
     marginTop: 16,
-  },
-
-  passwordContainer: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    marginTop: 16,
-  },
-
-  passwordInput: {
-    flex: 1,
-    paddingVertical: 16,
-    fontSize: 16,
   },
 
   loginButton: {
