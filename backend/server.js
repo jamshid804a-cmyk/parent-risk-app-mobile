@@ -5,18 +5,16 @@
     console.log("LOGIN ATTEMPT:", phone);
 
     // =========================
-    // 1. CHECK PARENT EXISTS
+    // 1. CHECK IF PARENT EXISTS
     // =========================
     const [parentRows] = await db.query(
       "SELECT * FROM parents WHERE phone = ?",
       [phone]
     );
 
-    let parent = null;
+    let parent = parentRows[0] || null;
 
-    if (parentRows.length > 0) {
-      parent = parentRows[0];
-
+    if (parent) {
       // password check
       if (parent.password !== password) {
         return res.status(401).json({ error: "Invalid credentials" });
@@ -24,7 +22,7 @@
     }
 
     // =========================
-    // 2. IF NO PARENT → FIND STUDENT
+    // 2. IF PARENT NOT EXISTS → FIND STUDENT
     // =========================
     if (!parent) {
       const [studentRows] = await db.query(
@@ -32,7 +30,7 @@
         [phone]
       );
 
-      if (studentRows.length === 0) {
+      if (!studentRows.length) {
         return res.status(404).json({
           error: "No student found with this number",
         });
@@ -41,7 +39,7 @@
       const student = studentRows[0];
 
       // =========================
-      // 3. AUTO CREATE PARENT
+      // 3. CREATE PARENT AUTOMATICALLY
       // =========================
       const [insertResult] = await db.query(
         "INSERT INTO parents (phone, password, studentId) VALUES (?, ?, ?)",
@@ -57,7 +55,16 @@
     }
 
     // =========================
-    // 4. GET STUDENT DATA
+    // 4. SAFETY CHECK (IMPORTANT)
+    // =========================
+    if (!parent.studentId) {
+      return res.status(500).json({
+        error: "Parent not linked to student properly",
+      });
+    }
+
+    // =========================
+    // 5. GET STUDENT DATA
     // =========================
     const [studentData] = await db.query(
       `
