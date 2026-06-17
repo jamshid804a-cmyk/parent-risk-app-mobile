@@ -5,42 +5,33 @@
     console.log("LOGIN ATTEMPT:", phone);
 
     // =========================
-    // 1. CHECK IF PARENT EXISTS
+    // 1. CHECK STUDENT FIRST (IMPORTANT FIX)
+    // =========================
+    const [studentRows] = await db.query(
+      "SELECT * FROM students WHERE contact = ?",
+      [phone]
+    );
+
+    if (!studentRows.length) {
+      return res.status(404).json({
+        error: "No student found with this number",
+      });
+    }
+
+    const student = studentRows[0];
+
+    // =========================
+    // 2. CHECK PARENT
     // =========================
     const [parentRows] = await db.query(
       "SELECT * FROM parents WHERE phone = ?",
       [phone]
     );
 
-    let parent = parentRows[0] || null;
+    let parent;
 
-    if (parent) {
-      // password check
-      if (parent.password !== password) {
-        return res.status(401).json({ error: "Invalid credentials" });
-      }
-    }
-
-    // =========================
-    // 2. IF PARENT NOT EXISTS → FIND STUDENT
-    // =========================
-    if (!parent) {
-      const [studentRows] = await db.query(
-        "SELECT * FROM students WHERE contact = ?",
-        [phone]
-      );
-
-      if (!studentRows.length) {
-        return res.status(404).json({
-          error: "No student found with this number",
-        });
-      }
-
-      const student = studentRows[0];
-
-      // =========================
-      // 3. CREATE PARENT AUTOMATICALLY
-      // =========================
+    if (parentRows.length === 0) {
+      // AUTO CREATE PARENT
       const [insertResult] = await db.query(
         "INSERT INTO parents (phone, password, studentId) VALUES (?, ?, ?)",
         [phone, password, student.id]
@@ -52,19 +43,21 @@
         password,
         studentId: student.id,
       };
+
+      console.log("Parent created:", parent.id);
+    } else {
+      parent = parentRows[0];
+
+      // password check ONLY if already exists
+      if (parent.password !== password) {
+        return res.status(401).json({
+          error: "Invalid credentials",
+        });
+      }
     }
 
     // =========================
-    // 4. SAFETY CHECK (IMPORTANT)
-    // =========================
-    if (!parent.studentId) {
-      return res.status(500).json({
-        error: "Parent not linked to student properly",
-      });
-    }
-
-    // =========================
-    // 5. GET STUDENT DATA
+    // 3. GET STUDENT DATA
     // =========================
     const [studentData] = await db.query(
       `
@@ -79,12 +72,9 @@
       WHERE s.id = ?
       GROUP BY s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk
       `,
-      [parent.studentId]
+      [student.id]
     );
 
-    // =========================
-    // RESPONSE
-    // =========================
     return res.json({
       success: true,
       parentId: parent.id,
