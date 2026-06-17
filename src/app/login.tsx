@@ -4,7 +4,7 @@ app.post('/api/parent/login', async (req, res) => {
   try {
     console.log("LOGIN:", phone);
 
-    // STEP 1: check parent by phone only
+    // STEP 1: check parent
     const [parentRows] = await db.query(
       'SELECT * FROM parents WHERE phone = ?',
       [phone]
@@ -15,13 +15,12 @@ app.post('/api/parent/login', async (req, res) => {
     if (parentRows.length > 0) {
       parent = parentRows[0];
 
-      // password check
       if (parent.password !== password) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
-    } 
-    else {
-      // STEP 2: check student table
+    } else {
+
+      // STEP 2: check student
       const [studentRows] = await db.query(
         'SELECT * FROM students WHERE contact = ?',
         [phone]
@@ -33,7 +32,7 @@ app.post('/api/parent/login', async (req, res) => {
 
       const student = studentRows[0];
 
-      // STEP 3: create parent automatically
+      // STEP 3: create parent
       const [insertResult] = await db.query(
         'INSERT INTO parents (phone, password, studentId) VALUES (?, ?, ?)',
         [phone, password, student.id]
@@ -47,7 +46,7 @@ app.post('/api/parent/login', async (req, res) => {
       };
     }
 
-    // STEP 4: get student data
+    // STEP 4: fetch student data
     const [studentResults] = await db.query(
       `
       SELECT 
