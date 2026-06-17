@@ -1,194 +1,78 @@
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { useAuth } from "../context/AuthContext";
+app.post('/api/parent/login', async (req, res) => {
+  const { phone, password } = req.body;
 
-export default function Login() {
-  const { login } = useAuth();
+  try {
+    console.log("LOGIN:", phone);
 
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+    // STEP 1: check parent by phone only
+    const [parentRows] = await db.query(
+      'SELECT * FROM parents WHERE phone = ?',
+      [phone]
+    );
 
-  const handleLogin = async () => {
-    if (!phone || !password) {
-      Alert.alert("Error", "Please enter phone and password");
-      return;
-    }
+    let parent = null;
 
-    setLoading(true);
+    if (parentRows.length > 0) {
+      parent = parentRows[0];
 
-    const result = await login(phone, password);
-
-    setLoading(false);
-
-    if (result.success) {
-      router.replace("/parent");
-    } else {
-      Alert.alert(
-        "Login Failed",
-        result.error || "Invalid credentials"
+      // password check
+      if (parent.password !== password) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+    } 
+    else {
+      // STEP 2: check student table
+      const [studentRows] = await db.query(
+        'SELECT * FROM students WHERE contact = ?',
+        [phone]
       );
+
+      if (studentRows.length === 0) {
+        return res.status(404).json({ error: "Student not found" });
+      }
+
+      const student = studentRows[0];
+
+      // STEP 3: create parent automatically
+      const [insertResult] = await db.query(
+        'INSERT INTO parents (phone, password, studentId) VALUES (?, ?, ?)',
+        [phone, password, student.id]
+      );
+
+      parent = {
+        id: insertResult.insertId,
+        phone,
+        password,
+        studentId: student.id
+      };
     }
-  };
 
-  return (
-    <View style={styles.container}>
-      {/* Logo */}
-      <View style={styles.logoContainer}>
-        <Text style={styles.logo}>🎓</Text>
-      </View>
+    // STEP 4: get student data
+    const [studentResults] = await db.query(
+      `
+      SELECT 
+        s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk,
+        ROUND(
+          COALESCE(SUM(a.present) / NULLIF(COUNT(a.id), 0) * 100, 100),
+          0
+        ) as attendancePercent
+      FROM students s
+      LEFT JOIN attendance a ON s.id = a.studentId
+      WHERE s.id = ?
+      GROUP BY s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk
+      `,
+      [parent.studentId]
+    );
 
-      <Text style={styles.title}>Parent Portal</Text>
+    return res.json({
+      success: true,
+      parentId: parent.id,
+      students: studentResults || [],
+      phone
+    });
 
-      <Text style={styles.subtitle}>
-        Monitor your child's academic performance
-      </Text>
-
-      {/* Phone Input */}
-      <TextInput
-        style={styles.input}
-        placeholder="Phone Number"
-        placeholderTextColor="#9ca3af"
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
-      />
-
-      {/* Password Input with Eye Icon */}
-      <View style={styles.passwordContainer}>
-        <TextInput
-          style={styles.passwordInput}
-          placeholder="Password"
-          placeholderTextColor="#9ca3af"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={!showPassword}
-        />
-
-        <TouchableOpacity
-          onPress={() => setShowPassword(!showPassword)}
-        >
-          <Ionicons
-            name={showPassword ? "eye-off" : "eye"}
-            size={24}
-            color="#6b7280"
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Login Button */}
-      <TouchableOpacity
-        style={[
-          styles.loginButton,
-          loading && { opacity: 0.7 },
-        ]}
-        onPress={handleLogin}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="white" />
-        ) : (
-          <Text style={styles.loginButtonText}>Login</Text>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f3f4f6",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 25,
-  },
-
-  logoContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "#2563eb",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 8,
-  },
-
-  logo: {
-    fontSize: 55,
-  },
-
-  title: {
-    marginTop: 35,
-    fontSize: 32,
-    fontWeight: "700",
-    color: "#111827",
-    textAlign: "center",
-  },
-
-  subtitle: {
-    marginTop: 12,
-    fontSize: 16,
-    color: "#6b7280",
-    textAlign: "center",
-    lineHeight: 24,
-  },
-
-  input: {
-    width: "100%",
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 14,
-    padding: 16,
-    fontSize: 16,
-    color: "#111827",
-    marginTop: 16,
-  },
-
-  passwordContainer: {
-    width: "100%",
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    marginTop: 16,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  passwordInput: {
-    flex: 1,
-    paddingVertical: 16,
-    fontSize: 16,
-    color: "#111827",
-  },
-
-  loginButton: {
-    backgroundColor: "#2563eb",
-    width: "100%",
-    paddingVertical: 18,
-    borderRadius: 18,
-    marginTop: 24,
-    elevation: 6,
-  },
-
-  loginButtonText: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+  } catch (err) {
+    console.error("LOGIN ERROR:", err);
+    return res.status(500).json({ error: err.message });
+  }
 });
