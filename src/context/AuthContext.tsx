@@ -8,6 +8,7 @@ type Student = {
   gpa: number;
   cgpa: number;
   risk: string;
+  attendancePercent: number;
 };
 
 type User = {

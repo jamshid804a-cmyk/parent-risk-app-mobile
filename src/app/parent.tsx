@@ -21,9 +21,7 @@ export default function Parent() {
 
   async function fetchUnreadCount() {
     try {
-      const res = await fetch(
-        `${BASE_URL}/api/notifications?studentId=${user?.students?.[0]?.id}`
-      );
+      const res = await fetch(`${BASE_URL}/api/notifications?studentId=${user?.students?.[0]?.id}`);
       const data = await res.json();
       const unread = data.filter((n: any) => !n.read_status).length;
       setUnreadCount(unread);
@@ -58,36 +56,50 @@ export default function Parent() {
         At-Risk Students
       </Text>
 
-      {user?.students?.map((student: any) => (
-        <View key={student.id} style={{ backgroundColor: "#fff", borderRadius: 15, padding: 16, marginBottom: 12, elevation: 2, borderLeftWidth: 4, borderLeftColor: "#ef4444" }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <View>
-              <Text style={{ fontSize: 16, fontWeight: "700", color: "#1e293b" }}>{student.name}</Text>
-              <Text style={{ color: "gray", marginTop: 4 }}>{student.grade}</Text>
-            </View>
-            <View style={{ alignItems: "flex-end" }}>
-              <Text style={{ fontSize: 18, fontWeight: "700", color: "#ef4444" }}>CGPA: {student.cgpa}</Text>
-              <View style={{ backgroundColor: "#fef2f2", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 4 }}>
-                <Text style={{ color: "#ef4444", fontSize: 12, fontWeight: "700" }}>⚠️ AT RISK</Text>
+      {user?.students?.map((student: any) => {
+        const isAcademicRisk = parseFloat(student.cgpa) < 2.5;
+        const isAttendanceRisk = student.attendancePercent < 75;
+        return (
+          <View key={student.id} style={{ backgroundColor: "#fff", borderRadius: 15, padding: 16, marginBottom: 12, elevation: 2, borderLeftWidth: 4, borderLeftColor: "#ef4444" }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View>
+                <Text style={{ fontSize: 16, fontWeight: "700", color: "#1e293b" }}>{student.name}</Text>
+                <Text style={{ color: "gray", marginTop: 4 }}>{student.grade}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end", gap: 4 }}>
+                {isAcademicRisk && (
+                  <View style={{ backgroundColor: "#fef2f2", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ color: "#ef4444", fontSize: 11, fontWeight: "700" }}>⚠️ CGPA: {student.cgpa}</Text>
+                  </View>
+                )}
+                {isAttendanceRisk && (
+                  <View style={{ backgroundColor: "#fff7ed", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ color: "#f97316", fontSize: 11, fontWeight: "700" }}>⚠️ ATT: {student.attendancePercent}%</Text>
+                  </View>
+                )}
               </View>
             </View>
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+              {isAcademicRisk && (
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: "/performance", params: { studentId: student.id } })}
+                  style={{ flex: 1, backgroundColor: "#4f46e5", padding: 10, borderRadius: 10, alignItems: "center" }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>📘 Performance</Text>
+                </TouchableOpacity>
+              )}
+              {isAttendanceRisk && (
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: "/attendance", params: { studentId: student.id } })}
+                  style={{ flex: 1, backgroundColor: "#0ea5e9", padding: 10, borderRadius: 10, alignItems: "center" }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>📊 Attendance</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
-            <TouchableOpacity
-              onPress={() => router.push({ pathname: "/performance", params: { studentId: student.id } })}
-              style={{ flex: 1, backgroundColor: "#4f46e5", padding: 10, borderRadius: 10, alignItems: "center" }}
-            >
-              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>📘 Performance</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => router.push({ pathname: "/attendance", params: { studentId: student.id } })}
-              style={{ flex: 1, backgroundColor: "#0ea5e9", padding: 10, borderRadius: 10, alignItems: "center" }}
-            >
-              <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>📊 Attendance</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ))}
+        );
+      })}
 
       <TouchableOpacity
         onPress={() => router.push("/notification")}
