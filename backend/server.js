@@ -21,8 +21,8 @@ app.post("/api/parent/login", async (req, res) => {
     console.log("LOGIN ATTEMPT:", phone);
 
     const [studentRows] = await db.query(
-      "SELECT * FROM students WHERE contact = ? OR phone = ?",
-      [phone, phone]
+      "SELECT * FROM students WHERE contact = ?",
+      [phone]
     );
     if (!studentRows || studentRows.length === 0) {
       return res.status(404).json({
@@ -78,11 +78,11 @@ app.post("/api/parent/login", async (req, res) => {
         ) AS attendancePercent
       FROM students s
       LEFT JOIN attendance a ON s.id = a.studentId
-      WHERE s.phone = ? OR s.contact = ?
+      WHERE s.contact = ?
       GROUP BY s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk
       HAVING CAST(s.cgpa AS DECIMAL(4,2)) < 2.5 OR attendancePercent < 75
       `,
-      [phone, phone]
+      [phone]
     );
 
     return res.json({
