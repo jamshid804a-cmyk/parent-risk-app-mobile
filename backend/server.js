@@ -11,11 +11,11 @@ app.use(express.json());
 // MYSQL CONNECTION (FIXED)
 // =========================
 const db = mysql.createPool({
-  MYSQLHOST: "mysql.railway.internal",
-  MYSQLUSER: "root",
-  MYSQLPASSWORD: "zoqaEdIiQnZvgsbggFowIUvGWDZXlRJk",
-  MYSQLDATABASE: "railway",
-  MYSQLPORT: 3306,
+  host: "mysql.railway.internal",
+  user: "root",
+  password: "zoqaEdIiQnZvgsbggFowIUvGWDZXlRJk",
+  database: "my_project_db",
+  port: 3306,
   waitForConnections: true,
   connectionLimit: 10,
 }).promise();
@@ -107,7 +107,7 @@ app.post("/api/parent/login", async (req, res) => {
     return res.json({
       success: true,
       parentId: parent.id,
-      student: studentData?.[0] || null,
+      students: studentData || [],
       phone,
     });
 
