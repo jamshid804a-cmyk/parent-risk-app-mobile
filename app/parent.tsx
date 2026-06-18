@@ -21,9 +21,15 @@ export default function Parent() {
 
   async function fetchUnreadCount() {
     try {
-      const res = await fetch(`${BASE_URL}/api/notifications?studentId=${user?.students?.[0]?.id}`);
+      const studentId = user?.students?.[0]?.id;
+      if (!studentId) return;
+      // ✅ FIXED: use URL param not query param
+      const res = await fetch(`${BASE_URL}/api/notifications/${studentId}`);
+      if (!res.ok) return;
       const data = await res.json();
-      const unread = data.filter((n: any) => !n.read_status).length;
+      const unread = (data.notifications || []).filter(
+        (n: any) => Number(n.read_status) === 0
+      ).length;
       setUnreadCount(unread);
     } catch (e) {
       console.log("Failed to fetch notifications:", e);
