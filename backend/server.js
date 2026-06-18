@@ -27,13 +27,11 @@ app.post("/api/parent/login", async (req, res) => {
   }
 
   try {
-    // Step 1: Check if a parent account already exists for this number
     const [rows] = await db.query("SELECT * FROM parents WHERE phone = ?", [phone]);
 
     if (rows.length > 0) {
       const parent = rows[0];
 
-      // Compare password (plain text for now, use bcrypt in production)
       if (parent.password !== password) {
         return res.status(401).json({ success: false, error: "Invalid password" });
       }
@@ -42,14 +40,12 @@ app.post("/api/parent/login", async (req, res) => {
       return res.json({ success: true, parentId: parent.id, students: studentRows });
     }
 
-    // Step 2: No parent account yet — check if this number belongs to a student
     const [studentRows] = await db.query("SELECT * FROM students WHERE contact = ?", [phone]);
 
     if (studentRows.length === 0) {
       return res.status(404).json({ success: false, error: "This number is not registered to any student" });
     }
 
-    // Step 3: First-time login — create the parent account right now with this password
     const [insertResult] = await db.query(
       "INSERT INTO parents (phone, password, studentId) VALUES (?, ?, ?)",
       [phone, password, studentRows[0].id]
@@ -64,6 +60,63 @@ app.post("/api/parent/login", async (req, res) => {
   } catch (err) {
     console.error("LOGIN ERROR:", err);
     res.status(500).json({ success: false, error: err.message || "Server error" });
+  }
+});
+
+// ✅ GET attendance for a student
+app.get("/api/attendance/:studentId", async (req, res) => {
+  const { studentId } = req.params;
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM attendance WHERE studentId = ? ORDER BY date DESC",
+      [studentId]
+    );
+    res.json({ success: true, attendance: rows });
+  } catch (err) {
+    console.error("ATTENDANCE ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ✅ GET notifications for a student
+app.get("/api/notifications/:studentId", async (req, res) => {
+  const { studentId } = req.params;
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM notifications WHERE studentId = ? ORDER BY createdAt DESC",
+      [studentId]
+    );
+    res.json({ success: true, notifications: rows });
+  } catch (err) {
+    console.error("NOTIFICATIONS FETCH ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ✅ PUT mark a notification as read
+app.put("/api/notifications/:id/read", async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query(
+      "UPDATE notifications SET read_status = 1 WHERE id = ?",
+      [id]
+    );
+    res.json({ success: true, message: "Marked as read" });
+  } catch (err) {
+    console.error("MARK READ ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ✅ DELETE a notification
+app.delete("/api/notifications/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query("DELETE FROM notifications WHERE id = ?", [id]);
+    res.json({ success: true, message: "Notification deleted" });
+  } catch (err) {
+    console.error("DELETE NOTIFICATION ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
