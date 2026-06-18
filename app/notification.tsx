@@ -92,8 +92,8 @@ export default function Notification() {
     }
   }
 
-  // ✅ Unread count — automatically decreases as items are marked read
-  const unreadCount = notifications.filter((n: any) => n.read_status === 0).length;
+  // ✅ Unread count — automatically increases/decreases as notifications come in or get read
+  const unreadCount = notifications.filter((n: any) => Number(n.read_status) === 0).length;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -122,7 +122,7 @@ export default function Notification() {
         <ScrollView contentContainerStyle={styles.list}>
           {notifications.map((n: any) => {
             const isAcademic = n.type === "academic";
-            const isUnread = n.read_status === 0;
+            const isUnread = Number(n.read_status) === 0;
             return (
               <TouchableOpacity
                 key={n.id}

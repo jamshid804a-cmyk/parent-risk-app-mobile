@@ -93,6 +93,24 @@ app.get("/api/notifications/:studentId", async (req, res) => {
   }
 });
 
+// ✅ POST create a new notification
+app.post("/api/notifications", async (req, res) => {
+  const { studentId, message, type } = req.body;
+  if (!studentId || !message || !type) {
+    return res.status(400).json({ success: false, error: "studentId, message, and type are required" });
+  }
+  try {
+    await db.query(
+      "INSERT INTO notifications (studentId, message, type) VALUES (?, ?, ?)",
+      [studentId, message, type]
+    );
+    res.json({ success: true, message: "Notification sent" });
+  } catch (err) {
+    console.error("CREATE NOTIFICATION ERROR:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ✅ PUT mark a notification as read
 app.put("/api/notifications/:id/read", async (req, res) => {
   const { id } = req.params;
