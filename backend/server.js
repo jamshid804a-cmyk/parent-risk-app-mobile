@@ -2,8 +2,9 @@
 const express = require("express");
 const cors = require("cors");
 const mysql = require("mysql2");
-const app = express();
 
+// ✅ Create Express app
+const app = express();
 app.use(cors());
 app.use(express.json());
 
@@ -18,54 +19,58 @@ const db = mysql.createPool({
   connectionLimit: 10,
 }).promise();
 
-// ✅ Request OTP
-app.post("/api/parent/request-otp", async (req, res) => {
-  const { phone } = req.body;
-  if (!phone) return res.status(400).json({ success: false, error: "Phone required" });
-
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-  try {
-    await db.query("INSERT INTO otps (phone, otp) VALUES (?, ?)", [phone, otp]);
-    console.log(`Saved OTP ${otp} for phone ${phone}`);
-    res.json({ success: true });
-  } catch (err) {
-    console.error("REQUEST OTP ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+// ✅ Parent login with phone + password (auto-creates parent on first login)
+app.post("/api/parent/login", async (req, res) => {
+  const { phone, password } = req.body;
+  if (!phone || !password) {
+    return res.status(400).json({ success: false, error: "Phone and password required" });
   }
-});
-
-// ✅ Verify OTP
-app.post("/api/parent/verify-otp", async (req, res) => {
-  const { phone, otp } = req.body;
-  if (!phone || !otp) return res.status(400).json({ success: false, error: "Phone and OTP required" });
 
   try {
-    const [rows] = await db.query(
-      "SELECT * FROM otps WHERE phone = ? AND otp = ? AND created_at >= NOW() - INTERVAL 5 MINUTE ORDER BY created_at DESC LIMIT 1",
-      [phone, otp]
-    );
+    // Step 1: Check if a parent account already exists for this number
+    const [rows] = await db.query("SELECT * FROM parents WHERE phone = ?", [phone]);
 
-    if (!rows || rows.length === 0) {
-      return res.status(401).json({ success: false, error: "Invalid or expired OTP" });
+    if (rows.length > 0) {
+      const parent = rows[0];
+
+      // Compare password (plain text for now, use bcrypt in production)
+      if (parent.password !== password) {
+        return res.status(401).json({ success: false, error: "Invalid password" });
+      }
+
+      const [studentRows] = await db.query("SELECT * FROM students WHERE contact = ?", [phone]);
+      return res.json({ success: true, parentId: parent.id, students: studentRows });
     }
 
+    // Step 2: No parent account yet — check if this number belongs to a student
     const [studentRows] = await db.query("SELECT * FROM students WHERE contact = ?", [phone]);
-    const students = studentRows || [];
 
-    const [parentRows] = await db.query("SELECT * FROM parents WHERE phone = ?", [phone]);
-    let parentId = parentRows.length ? parentRows[0].id : null;
+    if (studentRows.length === 0) {
+      return res.status(404).json({ success: false, error: "This number is not registered to any student" });
+    }
 
-    res.json({ success: true, parentId, students });
+    // Step 3: First-time login — create the parent account right now with this password
+    const [insertResult] = await db.query(
+      "INSERT INTO parents (phone, password, studentId) VALUES (?, ?, ?)",
+      [phone, password, studentRows[0].id]
+    );
+
+    return res.json({
+      success: true,
+      parentId: insertResult.insertId,
+      students: studentRows,
+      firstLogin: true,
+    });
   } catch (err) {
-    console.error("VERIFY OTP ERROR:", err);
+    console.error("LOGIN ERROR:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// ✅ Other routes unchanged...
+// ✅ Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log("Server running on port " + PORT);
 });
+
 module.exports = app;
