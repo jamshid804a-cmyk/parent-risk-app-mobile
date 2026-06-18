@@ -21,7 +21,6 @@ export default function Notification() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Refetch every time this screen is opened/focused, not just once
   useFocusEffect(
     useCallback(() => {
       if (user?.students && user.students.length > 0) {
@@ -33,7 +32,9 @@ export default function Notification() {
   async function fetchNotifications() {
     try {
       const studentId = user?.students[0]?.id;
+      if (!studentId) return;
       const res = await fetch(`${BASE_URL}/api/notifications/${studentId}`);
+      if (!res.ok) return;
       const data = await res.json();
       setNotifications((data.notifications || []).reverse());
     } catch (e) {
@@ -92,8 +93,9 @@ export default function Notification() {
     }
   }
 
-  // ✅ Unread count — automatically increases/decreases as notifications come in or get read
-  const unreadCount = notifications.filter((n: any) => Number(n.read_status) === 0).length;
+  const unreadCount = notifications.filter(
+    (n: any) => Number(n.read_status) === 0
+  ).length;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -135,7 +137,12 @@ export default function Notification() {
               >
                 <View style={styles.cardTop}>
                   <View style={styles.cardTopLeft}>
-                    <Text style={[styles.badge, isAcademic ? styles.academicBadge : styles.attendanceBadge]}>
+                    <Text
+                      style={[
+                        styles.badge,
+                        isAcademic ? styles.academicBadge : styles.attendanceBadge,
+                      ]}
+                    >
                       {isAcademic ? "Academic" : "Attendance"}
                     </Text>
                     {isUnread && <View style={styles.unreadDot} />}
@@ -149,7 +156,9 @@ export default function Notification() {
                 </View>
                 <Text style={styles.message}>{n.message}</Text>
                 <Text style={styles.tapHint}>
-                  {isAcademic ? "Tap to view Academic Performance →" : "Tap to view Attendance →"}
+                  {isAcademic
+                    ? "Tap to view Academic Performance →"
+                    : "Tap to view Attendance →"}
                 </Text>
                 <Text style={styles.time}>
                   {new Date(n.createdAt).toLocaleString()}
@@ -189,13 +198,31 @@ const styles = StyleSheet.create({
   loadingText: { color: "#64748b", marginTop: 8 },
   emptyText: { fontSize: 15, color: "#94a3b8" },
   list: { padding: 16, gap: 12 },
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 16, elevation: 2, borderWidth: 1, borderColor: "#e2e8f0" },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
   unreadCard: { borderLeftWidth: 4 },
   academicCard: { borderLeftColor: "#f59e0b" },
   attendanceCard: { borderLeftColor: "#3b82f6" },
-  cardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  cardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
   cardTopLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
-  badge: { fontSize: 11, fontWeight: "700", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  badge: {
+    fontSize: 11,
+    fontWeight: "700",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
   academicBadge: { backgroundColor: "#fef3c7", color: "#d97706" },
   attendanceBadge: { backgroundColor: "#dbeafe", color: "#2563eb" },
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" },
