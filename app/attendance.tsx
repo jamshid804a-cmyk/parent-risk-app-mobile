@@ -70,9 +70,6 @@ export default function AttendanceScreen() {
   const rawId = Array.isArray(params.studentId) ? params.studentId[0] : params.studentId;
   const studentIdNum = rawId ? Number(rawId) : null;
 
-  // Resolve the exact student that was tapped on the dashboard.
-  // Falls back to the first student only when no studentId was passed
-  // (e.g. older links), so nothing else breaks.
   const student =
     user?.students?.find((s: any) => s.id === studentIdNum) ||
     (studentIdNum ? null : user?.students?.[0]) ||
@@ -103,10 +100,13 @@ export default function AttendanceScreen() {
         setLoading(false);
         return;
       }
-      const url = `${BASE_URL}/api/attendance?studentId=${student.id}`;
+      // ✅ FIXED: route param instead of query param
+      const url = `${BASE_URL}/api/attendance/${student.id}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const allRecords: AttendanceRecord[] = await res.json();
+      // ✅ FIXED: backend returns { success, attendance: [...] }
+      const data = await res.json();
+      const allRecords: AttendanceRecord[] = data.attendance;
       const validRecords = allRecords.filter((r) => r.day > 0);
       setRecords(validRecords);
       setWeeks(buildWeeks(validRecords, month));

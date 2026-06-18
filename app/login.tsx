@@ -12,8 +12,9 @@ import {
 import { useAuth } from "../src/context/AuthContext";
 
 export default function Login() {
-  const { requestOtp } = useAuth(); // new function in AuthContext
+  const { login } = useAuth();
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -22,21 +23,22 @@ export default function Login() {
       return;
     }
 
+    if (!password) {
+      Alert.alert("Error", "Please enter password");
+      return;
+    }
+
     setLoading(true);
 
-    // Step 1: Ask backend to send OTP
-    const result = await requestOtp(phone.trim());
+    // Ask backend to verify phone + password
+    const result = await login(phone.trim(), password.trim());
 
     setLoading(false);
 
     if (result.success) {
-      // Step 2: Go to OTP verification screen
-      router.push({
-        pathname: "/verify-otp",
-        params: { phone: phone.trim() },
-      });
+      router.replace("/parent");
     } else {
-      Alert.alert("Login Failed", result.error || "Invalid number");
+      Alert.alert("Login Failed", result.error || "Invalid phone number or password");
     }
   };
 
@@ -62,7 +64,17 @@ export default function Login() {
         keyboardType="phone-pad"
       />
 
-      {/* Login Button */}
+      {/* Password Input */}
+      <TextInput
+        style={styles.input}
+        placeholder="Password"
+        placeholderTextColor="#9ca3af"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+      />
+
+      {/* Login Button (below Password field) */}
       <TouchableOpacity
         style={[styles.loginButton, loading && { opacity: 0.7 }]}
         onPress={handleLogin}
@@ -71,7 +83,7 @@ export default function Login() {
         {loading ? (
           <ActivityIndicator color="white" />
         ) : (
-          <Text style={styles.loginButtonText}>Send OTP</Text>
+          <Text style={styles.loginButtonText}>Login</Text>
         )}
       </TouchableOpacity>
     </View>
