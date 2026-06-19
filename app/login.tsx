@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
@@ -16,25 +17,20 @@ export default function Login() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async () => {
     if (!phone) {
       Alert.alert("Error", "Please enter phone number");
       return;
     }
-
     if (!password) {
       Alert.alert("Error", "Please enter password");
       return;
     }
-
     setLoading(true);
-
-    // Ask backend to verify phone + password
     const result = await login(phone.trim(), password.trim());
-
     setLoading(false);
-
     if (result.success) {
       router.replace("/parent");
     } else {
@@ -64,17 +60,29 @@ export default function Login() {
         keyboardType="phone-pad"
       />
 
-      {/* Password Input */}
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        placeholderTextColor="#9ca3af"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+      {/* Password Input with eye icon */}
+      <View style={styles.passwordContainer}>
+        <TextInput
+          style={styles.passwordInput}
+          placeholder="Password"
+          placeholderTextColor="#9ca3af"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry={!showPassword}
+        />
+        <TouchableOpacity
+          onPress={() => setShowPassword(!showPassword)}
+          style={styles.eyeBtn}
+        >
+          <Ionicons
+            name={showPassword ? "eye-off-outline" : "eye-outline"}
+            size={22}
+            color="#6b7280"
+          />
+        </TouchableOpacity>
+      </View>
 
-      {/* Login Button (below Password field) */}
+      {/* Login Button */}
       <TouchableOpacity
         style={[styles.loginButton, loading && { opacity: 0.7 }]}
         onPress={handleLogin}
@@ -108,7 +116,6 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   logo: { fontSize: 55 },
-
   title: {
     marginTop: 35,
     fontSize: 32,
@@ -116,7 +123,6 @@ const styles = StyleSheet.create({
     color: "#111827",
     textAlign: "center",
   },
-
   subtitle: {
     marginTop: 12,
     fontSize: 16,
@@ -124,7 +130,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 24,
   },
-
   input: {
     width: "100%",
     backgroundColor: "#fff",
@@ -135,7 +140,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 16,
   },
-
+  passwordContainer: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    marginTop: 16,
+    paddingRight: 12,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 16,
+    fontSize: 16,
+    color: "#111827",
+  },
+  eyeBtn: {
+    padding: 4,
+  },
   loginButton: {
     backgroundColor: "#2563eb",
     width: "100%",
@@ -144,7 +168,6 @@ const styles = StyleSheet.create({
     marginTop: 24,
     elevation: 6,
   },
-
   loginButtonText: {
     color: "white",
     fontSize: 18,
