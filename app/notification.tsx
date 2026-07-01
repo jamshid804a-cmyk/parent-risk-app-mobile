@@ -31,12 +31,37 @@ export default function Notification() {
 
   async function fetchNotifications() {
     try {
-      const studentId = user?.students[0]?.id;
-      if (!studentId) return;
-      const res = await fetch(`${BASE_URL}/api/notifications/${studentId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setNotifications((data.notifications || []).reverse());
+      const students = user?.students || [];
+      if (students.length === 0) return;
+
+      const results = await Promise.all(
+        students.map(async (student: any) => {
+          try {
+            const res = await fetch(
+              `${BASE_URL}/api/notifications/${student.id}`
+            );
+            if (!res.ok) return [];
+            const data = await res.json();
+            return (data.notifications || []).map((n: any) => ({
+              ...n,
+              studentId: student.id,
+              studentName: student.name,
+            }));
+          } catch (e) {
+            console.log(`Failed to fetch notifications for ${student.id}:`, e);
+            return [];
+          }
+        })
+      );
+
+      const merged = results
+        .flat()
+        .sort(
+          (a: any, b: any) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+
+      setNotifications(merged);
     } catch (e) {
       console.log("Failed to fetch notifications:", e);
     } finally {
@@ -127,7 +152,7 @@ export default function Notification() {
             const isUnread = Number(n.read_status) === 0;
             return (
               <TouchableOpacity
-                key={n.id}
+                key={`${n.studentId}-${n.id}`}
                 onPress={() => handleTap(n)}
                 style={[
                   styles.card,
@@ -154,6 +179,9 @@ export default function Notification() {
                     <Ionicons name="trash-outline" size={18} color="#ef4444" />
                   </TouchableOpacity>
                 </View>
+                {n.studentName && (
+                  <Text style={styles.studentName}>{n.studentName}</Text>
+                )}
                 <Text style={styles.message}>{n.message}</Text>
                 <Text style={styles.tapHint}>
                   {isAcademic
@@ -227,6 +255,12 @@ const styles = StyleSheet.create({
   attendanceBadge: { backgroundColor: "#dbeafe", color: "#2563eb" },
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" },
   deleteBtn: { padding: 4 },
+  studentName: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1e293b",
+    marginBottom: 4,
+  },
   message: { fontSize: 13, color: "#475569", lineHeight: 20, marginBottom: 8 },
   tapHint: { fontSize: 12, color: "#3b82f6", fontWeight: "600", marginBottom: 4 },
   time: { fontSize: 11, color: "#94a3b8" },
