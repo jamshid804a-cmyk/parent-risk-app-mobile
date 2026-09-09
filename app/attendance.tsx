@@ -106,7 +106,7 @@ export default function AttendanceScreen() {
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       // ✅ FIXED: backend returns { success, attendance: [...] }
       const data = await res.json();
-      const allRecords: AttendanceRecord[] = data.attendance;
+      const allRecords: AttendanceRecord[] = Array.isArray(data) ? data : (data.attendance || []);
       const validRecords = allRecords.filter((r) => r.day > 0);
       setRecords(validRecords);
       setWeeks(buildWeeks(validRecords, month));
