@@ -1,4 +1,4 @@
-﻿import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
@@ -53,7 +53,7 @@ export default function Performance() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#4f46e5"]} />}
     >
       {/* TOP BAR */}
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 40, marginBottom: 10 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 55, marginBottom: 10 }}>
         <TouchableOpacity onPress={() => router.back()} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <Ionicons name="arrow-back" size={22} color="#4f46e5" />
           <Text style={{ color: "#4f46e5", fontWeight: "600" }}>Back</Text>
@@ -97,7 +97,7 @@ export default function Performance() {
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Text style={{ color: "#6b7280", fontSize: 14 }}>CGPA</Text>
           <Text style={{ fontWeight: "700", color: isRisk ? "#dc2626" : "#111827" }}>
-            {student.cgpa} {isRisk ? "⚠️" : "✅"}
+            {student.cgpa} {isRisk ? "??" : "?"}
           </Text>
         </View>
       </View>
