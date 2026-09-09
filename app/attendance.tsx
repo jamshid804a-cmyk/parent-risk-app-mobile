@@ -101,7 +101,7 @@ export default function AttendanceScreen() {
         return;
       }
       // ✅ FIXED: route param instead of query param
-      const url = `${BASE_URL}/api/attendance/${student.id}`;
+      const url = `${BASE_URL}/api/attendance?studentId=${student.id}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       // ✅ FIXED: backend returns { success, attendance: [...] }
