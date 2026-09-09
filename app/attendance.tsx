@@ -1,7 +1,7 @@
-import { Ionicons } from "@expo/vector-icons";
+﻿import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, RefreshControl, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, RefreshControl, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../src/context/AuthContext";
 
 const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
@@ -143,22 +143,25 @@ export default function AttendanceScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f8fafc" />
+
+      {/* TOP BAR - fixed below status bar */}
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.topBtn}>
+          <Ionicons name="arrow-back" size={22} color="#2563eb" />
+          <Text style={styles.topBtnText}>Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.topTitle}>Attendance</Text>
+        <TouchableOpacity onPress={onRefresh} style={styles.topBtn}>
+          <Ionicons name="refresh" size={22} color="#2563eb" />
+          <Text style={styles.topBtnText}>Refresh</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#2563eb"]} />}
       >
-        {/* TOP BAR */}
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <TouchableOpacity onPress={() => router.back()} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Ionicons name="arrow-back" size={22} color="#2563eb" />
-            <Text style={{ color: "#2563eb", fontWeight: "600" }}>Back</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onRefresh} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Ionicons name="refresh" size={22} color="#2563eb" />
-            <Text style={{ color: "#2563eb", fontWeight: "600" }}>Refresh</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* HEADER */}
         <View style={styles.header}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -244,7 +247,7 @@ export default function AttendanceScreen() {
               <Text style={styles.legendText}>Present</Text>
             </View>
             <View style={styles.legendItem}>
-              <Ionicons name="close-circle" size={14} color="#e5e7eb" />
+              <Ionicons name="close-circle" size={14} color="#94a3b8" />
               <Text style={styles.legendText}>Absent</Text>
             </View>
           </View>
@@ -266,7 +269,21 @@ export default function AttendanceScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f8fafc" },
   center: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },
-  container: { padding: 16, gap: 12, paddingBottom: 32, paddingTop: 10 },
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+    elevation: 2,
+  },
+  topBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  topBtnText: { color: "#2563eb", fontWeight: "600", fontSize: 14 },
+  topTitle: { fontSize: 16, fontWeight: "700", color: "#1e293b" },
+  container: { padding: 16, gap: 12, paddingBottom: 32 },
   header: { marginBottom: 4 },
   headerTitle: { fontSize: 22, fontWeight: "700", color: "#1e293b" },
   headerSub: { fontSize: 15, color: "#64748b", marginTop: 4 },
@@ -310,6 +327,4 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: "#94a3b8", textAlign: "center", paddingVertical: 12 },
   loadingText: { color: "#64748b", marginTop: 8 },
   errorText: { color: "#ef4444", fontSize: 15, textAlign: "center", padding: 24 },
-  backBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
-  backBtnText: { color: "#2563eb", fontWeight: "600" },
 });
