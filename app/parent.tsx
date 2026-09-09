@@ -1,4 +1,4 @@
-﻿import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -16,31 +16,31 @@ import { useAuth } from "../src/context/AuthContext";
 const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
 
 export default function Parent() {
-  const { user, logout, forceRefresh } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefreshing, setAutoRefreshing] = useState(false);
   const appState = useRef(AppState.currentState);
 
-  // 🔥 AUTO-REFRESH: When screen comes into focus
+  // ?? AUTO-REFRESH: When screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      console.log("📱 Screen focused - auto refreshing...");
+      console.log("?? Screen focused - auto refreshing...");
       handleAutoRefresh();
       return () => {
-        console.log("📱 Screen unfocused");
+        console.log("?? Screen unfocused");
       };
     }, [])
   );
 
-  // 🔥 AUTO-REFRESH: When app comes back to foreground
+  // ?? AUTO-REFRESH: When app comes back to foreground
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (
         appState.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        console.log('📱 App came to foreground - auto refreshing...');
+        console.log('?? App came to foreground - auto refreshing...');
         handleAutoRefresh();
       }
       appState.current = nextAppState;
@@ -51,11 +51,11 @@ export default function Parent() {
     };
   }, []);
 
-  // 🔥 AUTO-REFRESH: Every 30 seconds (optional)
+  // ?? AUTO-REFRESH: Every 30 seconds (optional)
   useEffect(() => {
     const interval = setInterval(() => {
       if (user) {
-        console.log('⏰ Auto-refresh timer triggered...');
+        console.log('? Auto-refresh timer triggered...');
         handleAutoRefresh();
       }
     }, 30000); // Refresh every 30 seconds
@@ -63,51 +63,51 @@ export default function Parent() {
     return () => clearInterval(interval);
   }, [user]);
 
-  // 🔥 Main refresh function
+  // ?? Main refresh function
   const handleAutoRefresh = async () => {
     if (autoRefreshing) return; // Prevent multiple simultaneous refreshes
     
     try {
       setAutoRefreshing(true);
-      console.log("🔄 Auto-refreshing...");
+      console.log("?? Auto-refreshing...");
       
-      // 🔥 Fetch fresh data from server
-      await forceRefresh();
+      // ?? Fetch fresh data from server
+      await refreshUser();
       
-      // 🔥 Fetch unread notifications
+      // ?? Fetch unread notifications
       await fetchUnreadCount();
       
       const studentCount = user?.students?.length || 0;
-      console.log(`✅ Auto-refresh complete! ${studentCount} students found`);
+      console.log(`? Auto-refresh complete! ${studentCount} students found`);
       
     } catch (error) {
-      console.log("❌ Auto-refresh error:", error);
+      console.log("? Auto-refresh error:", error);
     } finally {
       setAutoRefreshing(false);
     }
   };
 
-  // 🔥 Manual refresh (pull to refresh)
+  // ?? Manual refresh (pull to refresh)
   const handleManualRefresh = async () => {
     try {
       setRefreshing(true);
-      console.log("🔄 Manual refresh triggered...");
+      console.log("?? Manual refresh triggered...");
       
-      // 🔥 Force refresh from server
-      await forceRefresh();
+      // ?? Force refresh from server
+      await refreshUser();
       
-      // 🔥 Fetch unread notifications
+      // ?? Fetch unread notifications
       await fetchUnreadCount();
       
       const studentCount = user?.students?.length || 0;
-      console.log(`✅ Manual refresh complete! ${studentCount} students found`);
+      console.log(`? Manual refresh complete! ${studentCount} students found`);
       
       // Show success message
-      Alert.alert('✅ Refreshed', `Found ${studentCount} students`);
+      Alert.alert('? Refreshed', `Found ${studentCount} students`);
       
     } catch (error) {
-      console.log("❌ Manual refresh error:", error);
-      Alert.alert('❌ Error', 'Failed to refresh. Please try again.');
+      console.log("? Manual refresh error:", error);
+      Alert.alert('? Error', 'Failed to refresh. Please try again.');
     } finally {
       setRefreshing(false);
     }
@@ -141,7 +141,7 @@ export default function Parent() {
   const studentList = user?.students || [];
   const totalStudents = studentList.length;
 
-  // 🔥 Show loading state while auto-refreshing and no students
+  // ?? Show loading state while auto-refreshing and no students
   if (autoRefreshing && totalStudents === 0) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f4f6f8' }}>
@@ -168,7 +168,7 @@ export default function Parent() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <Text style={{ fontSize: 22, fontWeight: "bold" }}>Parent Dashboard</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            {/* 🔥 Refresh Button with indicator */}
+            {/* ?? Refresh Button with indicator */}
             <TouchableOpacity onPress={handleManualRefresh} disabled={refreshing || autoRefreshing}>
               <Ionicons 
                 name="refresh" 
@@ -188,10 +188,10 @@ export default function Parent() {
         </View>
         <Text style={{ marginTop: 10, color: "gray" }}>Welcome: {user?.phone}</Text>
         <Text style={{ marginTop: 5, color: "#ef4444", fontWeight: "600" }}>
-          ⚠️ {totalStudents} At-Risk Student{totalStudents > 1 ? "s" : ""}
+          ?? {totalStudents} At-Risk Student{totalStudents > 1 ? "s" : ""}
         </Text>
         
-        {/* 🔥 Auto-refresh indicator */}
+        {/* ?? Auto-refresh indicator */}
         {autoRefreshing && (
           <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <ActivityIndicator size="small" color="#4f46e5" />
@@ -199,7 +199,7 @@ export default function Parent() {
           </View>
         )}
         
-        {/* 🔥 Last updated time */}
+        {/* ?? Last updated time */}
         <Text style={{ marginTop: 5, color: "#999", fontSize: 10 }}>
           Last updated: {new Date().toLocaleTimeString()}
         </Text>
@@ -227,12 +227,12 @@ export default function Parent() {
                 <View style={{ alignItems: "flex-end", gap: 4 }}>
                   {isAcademicRisk && (
                     <View style={{ backgroundColor: "#fef2f2", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ color: "#ef4444", fontSize: 11, fontWeight: "700" }}>⚠️ CGPA: {student.cgpa}</Text>
+                      <Text style={{ color: "#ef4444", fontSize: 11, fontWeight: "700" }}>?? CGPA: {student.cgpa}</Text>
                     </View>
                   )}
                   {isAttendanceRisk && (
                     <View style={{ backgroundColor: "#fff7ed", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ color: "#f97316", fontSize: 11, fontWeight: "700" }}>⚠️ ATT: {student.attendancePercent}%</Text>
+                      <Text style={{ color: "#f97316", fontSize: 11, fontWeight: "700" }}>?? ATT: {student.attendancePercent}%</Text>
                     </View>
                   )}
                 </View>
