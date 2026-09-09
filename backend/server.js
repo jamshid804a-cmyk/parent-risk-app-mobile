@@ -104,6 +104,16 @@ app.delete('/api/notifications', async (req, res) => {
   }
 });
 
+// TEST ENDPOINT - Check all students
+app.get('/test-students', async (req, res) => {
+  try {
+    const [results] = await db.query('SELECT id, name, contact FROM students');
+    res.json({ students: results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => console.log("Server running on port " + PORT));
 module.exports = app;
