@@ -16,44 +16,149 @@ const db = mysql.createPool({
   ssl: { rejectUnauthorized: false },
 }).promise();
 
+// ✅ LOGIN ENDPOINT
 app.post("/api/parent/login", async (req, res) => {
   const { phone, password } = req.body;
   try {
+    console.log(`🔐 Login attempt for phone: ${phone}`);
+    
     const [studentRows] = await db.query("SELECT * FROM students WHERE contact = ?", [phone]);
     if (!studentRows || studentRows.length === 0) {
       return res.status(404).json({ success: false, error: "No student found with this number" });
     }
-    const student = studentRows[0];
+    
     const [parentRows] = await db.query("SELECT * FROM parents WHERE phone = ?", [phone]);
     let parent;
     if (!parentRows || parentRows.length === 0) {
       const [insertResult] = await db.query(
         "INSERT INTO parents (phone, password, studentId) VALUES (?, ?, ?)",
-        [phone, password, student.id]
+        [phone, password, studentRows[0].id]
       );
-      parent = { id: insertResult.insertId, phone, studentId: student.id };
+      parent = { id: insertResult.insertId, phone, studentId: studentRows[0].id };
     } else {
       parent = parentRows[0];
       if (parent.password !== password) {
         return res.status(401).json({ success: false, error: "Invalid credentials" });
       }
     }
-    const [studentData] = await db.query(
-      `SELECT s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk,
-        COALESCE(ROUND((SUM(CASE WHEN a.present = 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(a.id), 0)) * 100, 0), 100) AS attendancePercent
-       FROM students s
-       LEFT JOIN attendance a ON s.id = a.studentId
-       WHERE s.contact = ?
-       GROUP BY s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk
-       HAVING CAST(s.cgpa AS DECIMAL(4,2)) < 2.5 OR attendancePercent < 75`,
+
+    // 🔥 FIX: Handle students with no attendance records
+    const [atRiskStudents] = await db.query(
+      `SELECT 
+        s.id, 
+        s.name, 
+        s.grade, 
+        s.gpa, 
+        s.cgpa, 
+        s.risk,
+        COALESCE(
+          (
+            SELECT ROUND((SUM(CASE WHEN a.present = 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(a.id), 0)) * 100, 0)
+            FROM attendance a
+            WHERE a.studentId = s.id
+          ), 
+          100
+        ) AS attendancePercent
+      FROM students s
+      WHERE s.contact = ?
+      GROUP BY s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk
+      HAVING CAST(s.cgpa AS DECIMAL(4,2)) < 2.55
+      ORDER BY s.id DESC`,
       [phone]
     );
-    return res.json({ success: true, parentId: parent.id, students: studentData || [], phone });
+    
+    console.log(`✅ Found ${atRiskStudents.length} at-risk students for phone ${phone}`);
+    console.log(`👤 Student details:`, atRiskStudents.map(s => ({
+      id: s.id,
+      name: s.name,
+      cgpa: s.cgpa,
+      attendancePercent: s.attendancePercent
+    })));
+
+    return res.json({ 
+      success: true, 
+      parentId: parent.id, 
+      students: atRiskStudents || [], 
+      phone 
+    });
   } catch (err) {
+    console.error("❌ Login error:", err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
+// 🔥 REFRESH ENDPOINT
+app.get("/api/parent/:parentId/students", async (req, res) => {
+  const { parentId } = req.params;
+  
+  try {
+    console.log(`📱 Fetching at-risk students for parent ${parentId}`);
+    
+    const [parentRows] = await db.query(
+      "SELECT phone FROM parents WHERE id = ?",
+      [parseInt(parentId)]
+    );
+    
+    if (!parentRows || parentRows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Parent not found" 
+      });
+    }
+    
+    const phone = parentRows[0].phone;
+    console.log(`📱 Parent phone: ${phone}`);
+    
+    // 🔥 FIX: Handle students with no attendance records
+    const [atRiskStudents] = await db.query(
+      `SELECT 
+        s.id, 
+        s.name, 
+        s.grade, 
+        s.gpa, 
+        s.cgpa, 
+        s.risk,
+        COALESCE(
+          (
+            SELECT ROUND((SUM(CASE WHEN a.present = 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(a.id), 0)) * 100, 0)
+            FROM attendance a
+            WHERE a.studentId = s.id
+          ), 
+          100
+        ) AS attendancePercent
+      FROM students s
+      WHERE s.contact = ?
+      GROUP BY s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk
+      HAVING CAST(s.cgpa AS DECIMAL(4,2)) < 2.55
+      ORDER BY s.id DESC`,
+      [phone]
+    );
+    
+    console.log(`✅ Found ${atRiskStudents.length} at-risk students for parent ${parentId}`);
+    console.log(`👤 Student details:`, atRiskStudents.map(s => ({
+      id: s.id,
+      name: s.name,
+      cgpa: s.cgpa,
+      attendancePercent: s.attendancePercent
+    })));
+
+    return res.json({
+      success: true,
+      parentId: parseInt(parentId),
+      students: atRiskStudents || [],
+      phone: phone
+    });
+    
+  } catch (err) {
+    console.error("❌ Error fetching parent students:", err);
+    return res.status(500).json({ 
+      success: false, 
+      error: err.message 
+    });
+  }
+});
+
+// Keep all your other endpoints as they are
 app.get('/api/parent/student', async (req, res) => {
   const { studentId } = req.query;
   try {
@@ -104,10 +209,9 @@ app.delete('/api/notifications', async (req, res) => {
   }
 });
 
-// TEST ENDPOINT - Check all students
 app.get('/test-students', async (req, res) => {
   try {
-    const [results] = await db.query('SELECT id, name, contact FROM students');
+    const [results] = await db.query('SELECT id, name, contact, cgpa FROM students');
     res.json({ students: results });
   } catch (err) {
     res.status(500).json({ error: err.message });
