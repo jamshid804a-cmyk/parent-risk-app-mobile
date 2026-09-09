@@ -1,36 +1,52 @@
 ﻿import { router, useFocusEffect } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../src/context/AuthContext";
 
 const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
 
 export default function Parent() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
-    if (user?.students?.[0]?.id) fetchUnreadCount();
-  }, [user]);
+  // 🔄 Every time this screen comes into focus (e.g. returning from another
+  // screen, or reopening the app), refresh the student list AND unread count.
+  // This is what removes the "must logout/login" requirement.
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshUser();
+    }, [])
+  );
 
   useFocusEffect(
     React.useCallback(() => {
-      if (user?.students?.[0]?.id) fetchUnreadCount();
+      if (user?.students && user.students.length > 0) fetchUnreadCount();
     }, [user])
   );
 
   async function fetchUnreadCount() {
     try {
-      const studentId = user?.students?.[0]?.id;
-      if (!studentId) return;
-      // ✅ FIXED: use URL param not query param
-      const res = await fetch(`${BASE_URL}/api/notifications/${studentId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const unread = (data.notifications || []).filter(
-        (n: any) => Number(n.read_status) === 0
-      ).length;
-      setUnreadCount(unread);
+      const students = user?.students || [];
+      if (students.length === 0) return;
+
+      // ✅ Fetch unread notifications for EVERY student, not just the first
+      const results = await Promise.all(
+        students.map(async (student: any) => {
+          try {
+            const res = await fetch(`${BASE_URL}/api/notifications/${student.id}`);
+            if (!res.ok) return 0;
+            const data = await res.json();
+            return (data.notifications || []).filter(
+              (n: any) => Number(n.read_status) === 0
+            ).length;
+          } catch {
+            return 0;
+          }
+        })
+      );
+
+      const totalUnread = results.reduce((sum, count) => sum + count, 0);
+      setUnreadCount(totalUnread);
     } catch (e) {
       console.log("Failed to fetch notifications:", e);
     }

@@ -1,147 +1,109 @@
-﻿require("dotenv").config();
-const express = require("express");
+﻿const express = require("express");
 const cors = require("cors");
 const mysql = require("mysql2");
-
-// ✅ Create Express app
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ Database connection (Railway)
 const db = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: process.env.DB_PORT || 3306,
+  host: process.env.MYSQLHOST,
+  port: process.env.MYSQLPORT,
+  user: process.env.MYSQLUSER,
+  password: process.env.MYSQLPASSWORD,
+  database: process.env.MYSQLDATABASE,
   waitForConnections: true,
   connectionLimit: 10,
+  ssl: { rejectUnauthorized: false },
 }).promise();
 
-// ✅ Parent login with phone + password (auto-creates parent on first login)
 app.post("/api/parent/login", async (req, res) => {
   const { phone, password } = req.body;
-  if (!phone || !password) {
-    return res.status(400).json({ success: false, error: "Phone and password required" });
-  }
-
   try {
-    const [rows] = await db.query("SELECT * FROM parents WHERE phone = ?", [phone]);
-
-    if (rows.length > 0) {
-      const parent = rows[0];
-
-      if (parent.password !== password) {
-        return res.status(401).json({ success: false, error: "Invalid password" });
-      }
-
-      const [studentRows] = await db.query("SELECT * FROM students WHERE contact = ?", [phone]);
-      return res.json({ success: true, parentId: parent.id, students: studentRows });
-    }
-
     const [studentRows] = await db.query("SELECT * FROM students WHERE contact = ?", [phone]);
-
-    if (studentRows.length === 0) {
-      return res.status(404).json({ success: false, error: "This number is not registered to any student" });
+    if (!studentRows || studentRows.length === 0) {
+      return res.status(404).json({ success: false, error: "No student found with this number" });
     }
-
-    const [insertResult] = await db.query(
-      "INSERT INTO parents (phone, password, studentId) VALUES (?, ?, ?)",
-      [phone, password, studentRows[0].id]
+    const student = studentRows[0];
+    const [parentRows] = await db.query("SELECT * FROM parents WHERE phone = ?", [phone]);
+    let parent;
+    if (!parentRows || parentRows.length === 0) {
+      const [insertResult] = await db.query(
+        "INSERT INTO parents (phone, password, studentId) VALUES (?, ?, ?)",
+        [phone, password, student.id]
+      );
+      parent = { id: insertResult.insertId, phone, studentId: student.id };
+    } else {
+      parent = parentRows[0];
+      if (parent.password !== password) {
+        return res.status(401).json({ success: false, error: "Invalid credentials" });
+      }
+    }
+    const [studentData] = await db.query(
+      `SELECT s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk,
+        COALESCE(ROUND((SUM(CASE WHEN a.present = 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(a.id), 0)) * 100, 0), 100) AS attendancePercent
+       FROM students s
+       LEFT JOIN attendance a ON s.id = a.studentId
+       WHERE s.contact = ?
+       GROUP BY s.id, s.name, s.grade, s.gpa, s.cgpa, s.risk
+       HAVING CAST(s.cgpa AS DECIMAL(4,2)) < 2.5 OR attendancePercent < 75`,
+      [phone]
     );
-
-    return res.json({
-      success: true,
-      parentId: insertResult.insertId,
-      students: studentRows,
-      firstLogin: true,
-    });
+    return res.json({ success: true, parentId: parent.id, students: studentData || [], phone });
   } catch (err) {
-    console.error("LOGIN ERROR:", err);
-    res.status(500).json({ success: false, error: err.message || "Server error" });
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// ✅ GET attendance for a student
-app.get("/api/attendance/:studentId", async (req, res) => {
-  const { studentId } = req.params;
+app.get('/api/parent/student', async (req, res) => {
+  const { studentId } = req.query;
   try {
-    const [rows] = await db.query(
-      "SELECT * FROM attendance WHERE studentId = ? ORDER BY date DESC",
-      [studentId]
-    );
-    res.json({ success: true, attendance: rows });
+    const [results] = await db.query('SELECT * FROM students WHERE id = ?', [parseInt(studentId, 10)]);
+    res.json({ success: true, data: results[0] || null });
   } catch (err) {
-    console.error("ATTENDANCE ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ GET notifications for a student
-app.get("/api/notifications/:studentId", async (req, res) => {
-  const { studentId } = req.params;
+app.get('/api/attendance', async (req, res) => {
+  const { studentId } = req.query;
   try {
-    const [rows] = await db.query(
-      "SELECT * FROM notifications WHERE studentId = ? ORDER BY createdAt DESC",
-      [studentId]
-    );
-    res.json({ success: true, notifications: rows });
+    const [results] = await db.query('SELECT * FROM attendance WHERE studentId = ?', [parseInt(studentId, 10)]);
+    res.json(results);
   } catch (err) {
-    console.error("NOTIFICATIONS FETCH ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ POST create a new notification
-app.post("/api/notifications", async (req, res) => {
-  const { studentId, message, type } = req.body;
-  if (!studentId || !message || !type) {
-    return res.status(400).json({ success: false, error: "studentId, message, and type are required" });
-  }
+app.get('/api/notifications', async (req, res) => {
+  const { studentId } = req.query;
   try {
-    await db.query(
-      "INSERT INTO notifications (studentId, message, type) VALUES (?, ?, ?)",
-      [studentId, message, type]
-    );
-    res.json({ success: true, message: "Notification sent" });
+    const [results] = await db.query('SELECT * FROM notifications WHERE studentId = ? ORDER BY id DESC', [parseInt(studentId, 10)]);
+    res.json(results);
   } catch (err) {
-    console.error("CREATE NOTIFICATION ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ PUT mark a notification as read
-app.put("/api/notifications/:id/read", async (req, res) => {
-  const { id } = req.params;
+app.put('/api/notifications', async (req, res) => {
+  const { id } = req.body;
   try {
-    await db.query(
-      "UPDATE notifications SET read_status = 1 WHERE id = ?",
-      [id]
-    );
-    res.json({ success: true, message: "Marked as read" });
+    await db.query('UPDATE notifications SET read_status = 1 WHERE id = ?', [id]);
+    res.json({ success: true });
   } catch (err) {
-    console.error("MARK READ ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ DELETE a notification
-app.delete("/api/notifications/:id", async (req, res) => {
-  const { id } = req.params;
+app.delete('/api/notifications', async (req, res) => {
+  const { id } = req.query;
   try {
-    await db.query("DELETE FROM notifications WHERE id = ?", [id]);
-    res.json({ success: true, message: "Notification deleted" });
+    await db.query('DELETE FROM notifications WHERE id = ?', [id]);
+    res.json({ success: true });
   } catch (err) {
-    console.error("DELETE NOTIFICATION ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("Server running on port " + PORT);
-});
-
+app.listen(PORT, "0.0.0.0", () => console.log("Server running on port " + PORT));
 module.exports = app;

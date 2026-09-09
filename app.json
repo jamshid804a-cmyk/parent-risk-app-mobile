@@ -38,7 +38,8 @@
           "android": {
             "enableProguardInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "enableMinifyInReleaseBuilds": true
           }
         }
       ]
@@ -53,6 +54,13 @@
         "projectId": "b865a76d-9676-4c6e-b8ed-e0ec43a7dbb7"
       }
     },
-    "owner": "jamshid-khan-afridi"
+    "owner": "jamshid-khan-afridi",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b865a76d-9676-4c6e-b8ed-e0ec43a7dbb7"
+    },
+    "ios": {}
   }
 }

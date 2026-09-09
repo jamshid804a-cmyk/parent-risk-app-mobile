@@ -22,6 +22,8 @@ type AuthContextType = {
   login: (phone: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   loading: boolean;
+  addStudentToContext: (newStudent: Student) => Promise<void>;
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -29,6 +31,8 @@ const AuthContext = createContext<AuthContextType>({
   login: async () => ({ success: false }),
   logout: async () => {},
   loading: true,
+  addStudentToContext: async () => {},
+  refreshUser: async () => {},
 });
 
 const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
@@ -52,7 +56,6 @@ export const AuthProvider = ({ children }: any) => {
     }
   };
 
-  // ✅ Login with phone + password (auto-creates parent account on first login)
   const login = async (phone: string, password: string) => {
     try {
       const res = await fetch(`${BASE_URL}/api/parent/login`, {
@@ -84,8 +87,46 @@ export const AuthProvider = ({ children }: any) => {
     await AsyncStorage.removeItem("user");
   };
 
+  // ✅ Option A: Instantly add the new student to context (no network call needed)
+  // Call this right after your "Add Student" API call succeeds, passing the
+  // student object the server returned.
+  const addStudentToContext = async (newStudent: Student) => {
+    if (!user) return;
+    const updatedUser: User = {
+      ...user,
+      students: [...user.students, newStudent],
+    };
+    setUser(updatedUser);
+    await AsyncStorage.setItem("user", JSON.stringify(updatedUser));
+  };
+
+  // ✅ Option B: Refetch the full parent+students list from the server
+  // Use this if the "add student" endpoint doesn't return the new student
+  // directly, or if you want to be 100% in sync with the backend.
+  const refreshUser = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`${BASE_URL}/api/parent/${user.parentId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const updatedUser: User = {
+        parentId: user.parentId,
+        students: data.students || [],
+        phone: user.phone,
+      };
+
+      setUser(updatedUser);
+      await AsyncStorage.setItem("user", JSON.stringify(updatedUser));
+    } catch (error) {
+      console.log("Failed to refresh user:", error);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider
+      value={{ user, login, logout, loading, addStudentToContext, refreshUser }}
+    >
       {children}
     </AuthContext.Provider>
   );
