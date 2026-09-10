@@ -1,4 +1,4 @@
-﻿import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
 
 type Student = {
@@ -110,7 +110,7 @@ export const AuthProvider = ({ children }: any) => {
 
   const refreshUser = async () => {
     if (!user) return;
-    await refreshFromServer(user.phone, user.password);
+    if (user?.phone && user?.password) await refreshFromServer(user.phone, user.password);
   };
 
   const logout = async () => {
