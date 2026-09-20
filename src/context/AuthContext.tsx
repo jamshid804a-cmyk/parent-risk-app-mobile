@@ -1,18 +1,21 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 type Student = {
   id: number;
   name: string;
-  grade: string;
-  gpa: number;
-  cgpa: number;
-  risk: string;
-  attendancePercent: number;
+  fatherName?: string;
+  grade?: string;
+  section?: string;
+  session?: string;
+  admissionNo?: string;
+  rollNo?: number | null;
+  contact?: string;
+  attendancePercent?: number;
 };
 
 type User = {
-  parentId: number;
+  parentId: string;
   students: Student[];
   phone: string;
   password: string;
@@ -39,6 +42,8 @@ const BASE_URL = "https://parentriskapp-backend.vercel.app";
 export const AuthProvider = ({ children }: any) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const userRef = useRef<User | null>(null);
+  userRef.current = user;
 
   useEffect(() => {
     loadUser();
@@ -48,8 +53,9 @@ export const AuthProvider = ({ children }: any) => {
     try {
       const storedUser = await AsyncStorage.getItem("user");
       if (storedUser) {
-        const parsed = JSON.parse(storedUser);
+        const parsed: User = JSON.parse(storedUser);
         setUser(parsed);
+        userRef.current = parsed;
         await refreshFromServer(parsed.phone, parsed.password);
       }
     } catch (error) {
@@ -71,10 +77,11 @@ export const AuthProvider = ({ children }: any) => {
         const updatedUser: User = {
           parentId: data.parentId,
           students: data.students || [],
-          phone,
+          phone: data.phone || phone,
           password,
         };
         setUser(updatedUser);
+        userRef.current = updatedUser;
         await AsyncStorage.setItem("user", JSON.stringify(updatedUser));
       }
     } catch (error) {
@@ -90,16 +97,19 @@ export const AuthProvider = ({ children }: any) => {
         body: JSON.stringify({ phone, password }),
       });
       const data = await res.json();
-      if (!res.ok) return { success: false, error: data.error || "Login failed" };
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || "Login failed" };
+      }
 
       const newUser: User = {
         parentId: data.parentId,
         students: data.students || [],
-        phone,
+        phone: data.phone || phone,
         password,
       };
 
       setUser(newUser);
+      userRef.current = newUser;
       await AsyncStorage.setItem("user", JSON.stringify(newUser));
       return { success: true };
     } catch (error) {
@@ -108,13 +118,16 @@ export const AuthProvider = ({ children }: any) => {
     }
   };
 
+  // ✅ Uses ref, so it always has the latest user
   const refreshUser = async () => {
-    if (!user) return;
-    if (user?.phone && user?.password) await refreshFromServer(user.phone, user.password);
+    const current = userRef.current;
+    if (!current) return;
+    await refreshFromServer(current.phone, current.password);
   };
 
   const logout = async () => {
     setUser(null);
+    userRef.current = null;
     await AsyncStorage.removeItem("user");
   };
 
