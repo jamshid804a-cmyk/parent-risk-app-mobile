@@ -7,28 +7,24 @@ import {
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
 
-const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app/api";
+const BASE_URL = "https://parentriskapp-backend.vercel.app";
 
 export default function Performance() {
-
   const { user } = useAuth();
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchStudent = async () => {
     try {
-
-      const response = await fetch(`${BASE_URL}/students`);
+      const response = await fetch(`${BASE_URL}/api/students`);
       const data = await response.json();
 
       console.log("API DATA:", data);
       console.log("LOGGED IN USER:", user);
 
-      if (data.success && data.data.length > 0) {
-
-        // Find this parent's child using studentId
+      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
         const myChild = data.data.find(
-          (s) => s.id === user?.studentId
+          (s) => String(s.id) === String(user?.studentId)
         );
 
         console.log("MY CHILD:", myChild);
@@ -38,13 +34,11 @@ export default function Performance() {
             name: myChild.name,
             rollNo: myChild.id,
             semester: myChild.grade,
-            gpa: myChild.gpa,
-            cgpa: parseFloat(myChild.cgpa),
-            risk: parseFloat(myChild.cgpa) < 2.5 ? "at-risk" : "good",
+            attendancePercent: myChild.attendancePercent ?? 100,
+            risk: (myChild.attendancePercent ?? 100) < 75 ? "at-risk" : "good",
           });
         }
       }
-
     } catch (error) {
       console.log("Fetch Error:", error);
     }
@@ -76,11 +70,10 @@ export default function Performance() {
     );
   }
 
-  const isRisk = student.cgpa < 2.5;
+  const isRisk = student.risk === "at-risk";
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: "#f0f4ff", padding: 15 }}>
-
       {/* HEADER */}
       <View
         style={{
@@ -111,43 +104,55 @@ export default function Performance() {
           borderLeftColor: "#4f46e5",
         }}
       >
-        <Text style={{ fontSize: 16, fontWeight: "800", marginBottom: 12, color: "#1e1b4b" }}>
+        <Text
+          style={{
+            fontSize: 16,
+            fontWeight: "800",
+            marginBottom: 12,
+            color: "#1e1b4b",
+          }}
+        >
           👤 Student Information
         </Text>
 
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            marginBottom: 8,
+          }}
+        >
           <Text style={{ color: "#6b7280", fontSize: 14 }}>Name</Text>
-          <Text style={{ fontWeight: "700", color: "#111827" }}>{student.name}</Text>
+          <Text style={{ fontWeight: "700", color: "#111827" }}>
+            {student.name}
+          </Text>
         </View>
 
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            marginBottom: 8,
+          }}
+        >
           <Text style={{ color: "#6b7280", fontSize: 14 }}>Roll No</Text>
-          <Text style={{ fontWeight: "700", color: "#111827" }}>{student.rollNo}</Text>
+          <Text style={{ fontWeight: "700", color: "#111827" }}>
+            {student.rollNo}
+          </Text>
         </View>
 
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+        <View
+          style={{ flexDirection: "row", justifyContent: "space-between" }}
+        >
           <Text style={{ color: "#6b7280", fontSize: 14 }}>Semester</Text>
-          <Text style={{ fontWeight: "700", color: "#111827" }}>{student.semester}</Text>
+          <Text style={{ fontWeight: "700", color: "#111827" }}>
+            {student.semester}
+          </Text>
         </View>
       </View>
 
-      {/* GPA CARDS */}
+      {/* ATTENDANCE CARD */}
       <View style={{ flexDirection: "row", marginTop: 15, gap: 10 }}>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "#4f46e5",
-            padding: 20,
-            borderRadius: 20,
-            alignItems: "center",
-            elevation: 4,
-          }}
-        >
-          <Text style={{ color: "#c7d2fe", fontSize: 13 }}>GPA</Text>
-          <Text style={{ color: "white", fontSize: 32, fontWeight: "800" }}>{student.gpa}</Text>
-          <Text style={{ color: "#c7d2fe", fontSize: 12 }}>This Semester</Text>
-        </View>
-
         <View
           style={{
             flex: 1,
@@ -158,9 +163,11 @@ export default function Performance() {
             elevation: 4,
           }}
         >
-          <Text style={{ color: "#e0f2fe", fontSize: 13 }}>CGPA</Text>
-          <Text style={{ color: "white", fontSize: 32, fontWeight: "800" }}>{student.cgpa}</Text>
-          <Text style={{ color: "#e0f2fe", fontSize: 12 }}>Cumulative</Text>
+          <Text style={{ color: "#e0f2fe", fontSize: 13 }}>Attendance</Text>
+          <Text style={{ color: "white", fontSize: 32, fontWeight: "800" }}>
+            {student.attendancePercent}%
+          </Text>
+          <Text style={{ color: "#e0f2fe", fontSize: 12 }}>Overall</Text>
         </View>
       </View>
 
@@ -185,7 +192,9 @@ export default function Performance() {
             marginBottom: 8,
           }}
         >
-          {isRisk ? "⚠️ At Risk - Needs Improvement" : "🌟 Excellent Performance!"}
+          {isRisk
+            ? "⚠️ At Risk - Needs Improvement"
+            : "🌟 Excellent Performance!"}
         </Text>
 
         <Text
@@ -196,11 +205,10 @@ export default function Performance() {
           }}
         >
           {isRisk
-            ? "CGPA is below 2.5. Please contact your academic advisor immediately."
+            ? "Attendance is below 75%. Please contact your academic advisor immediately."
             : "Keep up the great work! Study daily and continue improving."}
         </Text>
       </View>
-
     </ScrollView>
   );
 }

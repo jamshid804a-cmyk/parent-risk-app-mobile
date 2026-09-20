@@ -1,10 +1,10 @@
-﻿import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, RefreshControl, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../src/context/AuthContext";
 
-const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
+const BASE_URL = "https://parentriskapp-backend.vercel.app";
 
 interface AttendanceRecord {
   present: boolean;

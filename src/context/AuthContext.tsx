@@ -34,7 +34,7 @@ const AuthContext = createContext<AuthContextType>({
   refreshUser: async () => {},
 });
 
-const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
+const BASE_URL = "https://parentriskapp-backend.vercel.app";
 
 export const AuthProvider = ({ children }: any) => {
   const [user, setUser] = useState<User | null>(null);

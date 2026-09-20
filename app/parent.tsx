@@ -3,150 +3,127 @@ import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   AppState,
   RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { useAuth } from "../src/context/AuthContext";
 
-const BASE_URL = "https://parent-risk-app-mobile-production-30bb.up.railway.app";
+const BASE_URL = "https://parentriskapp-backend.vercel.app";
+
+const ACTIONS = [
+  { label: "Attendance", route: "/attendance", icon: "calendar", color: "#0ea5e9" },
+  { label: "Testing", route: "/testing", icon: "flask", color: "#4f46e5" },
+  { label: "Examination", route: "/examination", icon: "document-text", color: "#a855f7" },
+  { label: "Fee", route: "/fee", icon: "cash", color: "#10b981" },
+] as const;
 
 export default function Parent() {
   const { user, logout, refreshUser } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefreshing, setAutoRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
   const appState = useRef(AppState.currentState);
+  const busyRef = useRef(false);
+  const refreshUserRef = useRef(refreshUser);
+  refreshUserRef.current = refreshUser; // always the latest function
 
-  // ?? AUTO-REFRESH: When screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      console.log("?? Screen focused - auto refreshing...");
-      handleAutoRefresh();
-      return () => {
-        console.log("?? Screen unfocused");
-      };
-    }, [])
-  );
+  const studentList: any[] = user?.students || [];
+  const totalStudents = studentList.length;
 
-  // ?? AUTO-REFRESH: When app comes back to foreground
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (
-        appState.current.match(/inactive|background/) &&
-        nextAppState === 'active'
-      ) {
-        console.log('?? App came to foreground - auto refreshing...');
-        handleAutoRefresh();
-      }
-      appState.current = nextAppState;
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, []);
-
-  // ?? AUTO-REFRESH: Every 30 seconds (optional)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (user) {
-        console.log('? Auto-refresh timer triggered...');
-        handleAutoRefresh();
-      }
-    }, 30000); // Refresh every 30 seconds
-
-    return () => clearInterval(interval);
-  }, [user]);
-
-  // ?? Main refresh function
-  const handleAutoRefresh = async () => {
-    if (autoRefreshing) return; // Prevent multiple simultaneous refreshes
-    
+  // Silent refresh (focus, foreground, timer)
+  const doRefresh = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setAutoRefreshing(true);
     try {
-      setAutoRefreshing(true);
-      console.log("?? Auto-refreshing...");
-      
-      // ?? Fetch fresh data from server
-      await refreshUser();
-      
-      // ?? Fetch unread notifications
-      await fetchUnreadCount();
-      
-      const studentCount = user?.students?.length || 0;
-      console.log(`? Auto-refresh complete! ${studentCount} students found`);
-      
-    } catch (error) {
-      console.log("? Auto-refresh error:", error);
+      await refreshUserRef.current();
+      setLastUpdated(new Date());
+    } catch (e) {
+      console.log("Auto-refresh error:", e);
     } finally {
+      busyRef.current = false;
       setAutoRefreshing(false);
     }
-  };
+  }, []);
 
-  // ?? Manual refresh (pull to refresh)
+  // Pull-to-refresh
   const handleManualRefresh = async () => {
+    setRefreshing(true);
     try {
-      setRefreshing(true);
-      console.log("?? Manual refresh triggered...");
-      
-      // ?? Force refresh from server
-      await refreshUser();
-      
-      // ?? Fetch unread notifications
-      await fetchUnreadCount();
-      
-      const studentCount = user?.students?.length || 0;
-      console.log(`? Manual refresh complete! ${studentCount} students found`);
-      
-      // Show success message
-      Alert.alert('? Refreshed', `Found ${studentCount} students`);
-      
-    } catch (error) {
-      console.log("? Manual refresh error:", error);
-      Alert.alert('? Error', 'Failed to refresh. Please try again.');
+      await refreshUserRef.current();
+      setLastUpdated(new Date());
+    } catch (e) {
+      console.log("Manual refresh error:", e);
     } finally {
       setRefreshing(false);
     }
   };
 
-  async function fetchUnreadCount() {
-    try {
-      const students = user?.students || [];
-      if (students.length === 0) return;
+  // Refresh when the screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      doRefresh();
+    }, [doRefresh])
+  );
 
-      const results = await Promise.all(
-        students.map(async (student: any) => {
+  // Refresh when the app returns to the foreground
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (appState.current.match(/inactive|background/) && next === "active") {
+        doRefresh();
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
+  }, [doRefresh]);
+
+  // Refresh every 30 seconds
+  useEffect(() => {
+    if (!user) return;
+    const t = setInterval(doRefresh, 30000);
+    return () => clearInterval(t);
+  }, [user, doRefresh]);
+
+  // Recount unread notifications whenever the student list changes
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (studentList.length === 0) {
+        setUnreadCount(0);
+        return;
+      }
+      const counts = await Promise.all(
+        studentList.map(async (s: any) => {
           try {
-            const res = await fetch(`${BASE_URL}/api/notifications?studentId=${student.id}`);
+            const res = await fetch(`${BASE_URL}/api/notifications?studentId=${s.id}`);
             if (!res.ok) return 0;
             const data = await res.json();
-            return (Array.isArray(data) ? data : []).filter((n: any) => Number(n.read_status) === 0).length;
+            return (Array.isArray(data) ? data : []).filter(
+              (n: any) => Number(n.read_status) === 0
+            ).length;
           } catch {
             return 0;
           }
         })
       );
-      
-      const total = results.reduce((sum, count) => sum + count, 0);
-      setUnreadCount(total);
-    } catch (e) {
-      console.log("Failed to fetch notifications:", e);
-    }
-  }
+      if (!cancelled) setUnreadCount(counts.reduce((a, b) => a + b, 0));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.students]);
 
-  const studentList = user?.students || [];
-  const totalStudents = studentList.length;
-
-  // ?? Show loading state while auto-refreshing and no students
   if (autoRefreshing && totalStudents === 0) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f4f6f8' }}>
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f4f6f8" }}>
         <ActivityIndicator size="large" color="#4f46e5" />
-        <Text style={{ marginTop: 10, color: 'gray' }}>Loading students...</Text>
+        <Text style={{ marginTop: 10, color: "gray" }}>Loading students...</Text>
       </View>
     );
   }
@@ -156,11 +133,7 @@ export default function Parent() {
       style={{ flex: 1, backgroundColor: "#f4f6f8" }}
       contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
       refreshControl={
-        <RefreshControl 
-          refreshing={refreshing} 
-          onRefresh={handleManualRefresh} 
-          colors={["#4f46e5"]} 
-        />
+        <RefreshControl refreshing={refreshing} onRefresh={handleManualRefresh} colors={["#4f46e5"]} />
       }
     >
       {/* Header Card */}
@@ -168,90 +141,111 @@ export default function Parent() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <Text style={{ fontSize: 22, fontWeight: "bold" }}>Parent Dashboard</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            {/* ?? Refresh Button with indicator */}
             <TouchableOpacity onPress={handleManualRefresh} disabled={refreshing || autoRefreshing}>
-              <Ionicons 
-                name="refresh" 
-                size={22} 
-                color={(refreshing || autoRefreshing) ? "#999" : "#4f46e5"} 
+              <Ionicons
+                name="refresh"
+                size={22}
+                color={refreshing || autoRefreshing ? "#999" : "#4f46e5"}
               />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push("/notification")} style={{ position: "relative", padding: 6 }}>
+            <TouchableOpacity
+              onPress={() => router.push("/notification")}
+              style={{ position: "relative", padding: 6 }}
+            >
               <Ionicons name="notifications" size={26} color="#ef4444" />
               {unreadCount > 0 && (
-                <View style={{ position: "absolute", top: 0, right: 0, backgroundColor: "#ef4444", borderRadius: 10, minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 }}>
+                <View
+                  style={{
+                    position: "absolute", top: 0, right: 0, backgroundColor: "#ef4444",
+                    borderRadius: 10, minWidth: 18, height: 18, alignItems: "center",
+                    justifyContent: "center", paddingHorizontal: 3,
+                  }}
+                >
                   <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>{unreadCount}</Text>
                 </View>
               )}
             </TouchableOpacity>
           </View>
         </View>
+
         <Text style={{ marginTop: 10, color: "gray" }}>Welcome: {user?.phone}</Text>
-        <Text style={{ marginTop: 5, color: "#ef4444", fontWeight: "600" }}>
-          ?? {totalStudents} At-Risk Student{totalStudents > 1 ? "s" : ""}
+        <Text style={{ marginTop: 5, color: "#4f46e5", fontWeight: "600" }}>
+          {totalStudents} Student{totalStudents === 1 ? "" : "s"}
         </Text>
-        
-        {/* ?? Auto-refresh indicator */}
+
         {autoRefreshing && (
-          <View style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ marginTop: 10, flexDirection: "row", alignItems: "center", gap: 8 }}>
             <ActivityIndicator size="small" color="#4f46e5" />
-            <Text style={{ color: "#4f46e5", fontSize: 12 }}>Auto-refreshing...</Text>
+            <Text style={{ color: "#4f46e5", fontSize: 12 }}>Refreshing...</Text>
           </View>
         )}
-        
-        {/* ?? Last updated time */}
-        <Text style={{ marginTop: 5, color: "#999", fontSize: 10 }}>
-          Last updated: {new Date().toLocaleTimeString()}
-        </Text>
+        {lastUpdated && (
+          <Text style={{ marginTop: 5, color: "#999", fontSize: 10 }}>
+            Last updated: {lastUpdated.toLocaleTimeString()}
+          </Text>
+        )}
       </View>
 
       <Text style={{ fontSize: 16, fontWeight: "700", color: "#1e293b", marginTop: 20, marginBottom: 10 }}>
-        At-Risk Students
+        My Children
       </Text>
 
       {studentList.length === 0 ? (
         <View style={{ backgroundColor: "#fff", padding: 20, borderRadius: 10, alignItems: "center" }}>
-          <Text style={{ color: "gray" }}>No at-risk students found</Text>
+          <Text style={{ color: "gray" }}>No students found for this number</Text>
         </View>
       ) : (
         studentList.map((student: any) => {
-          const isAcademicRisk = parseFloat(student.cgpa) < 2.5;
-          const isAttendanceRisk = student.attendancePercent < 75;
+          const lowAttendance =
+            student.attendancePercent !== undefined && student.attendancePercent < 75;
           return (
-            <View key={student.id || student._id} style={{ backgroundColor: "#fff", borderRadius: 15, padding: 16, marginBottom: 12, elevation: 2, borderLeftWidth: 4, borderLeftColor: "#ef4444" }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <View>
-                  <Text style={{ fontSize: 16, fontWeight: "700", color: "#1e293b" }}>{student.name}</Text>
-                  <Text style={{ color: "gray", marginTop: 4 }}>{student.grade}</Text>
-                </View>
-                <View style={{ alignItems: "flex-end", gap: 4 }}>
-                  {isAcademicRisk && (
-                    <View style={{ backgroundColor: "#fef2f2", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ color: "#ef4444", fontSize: 11, fontWeight: "700" }}>?? CGPA: {student.cgpa}</Text>
-                    </View>
+            <View
+              key={student.id || student._id}
+              style={{ backgroundColor: "#fff", borderRadius: 15, padding: 16, marginBottom: 12, elevation: 2 }}
+            >
+              {/* Profile */}
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 17, fontWeight: "700", color: "#1e293b" }}>{student.name}</Text>
+                  {!!student.fatherName && (
+                    <Text style={{ color: "gray", marginTop: 3 }}>Father: {student.fatherName}</Text>
                   )}
-                  {isAttendanceRisk && (
-                    <View style={{ backgroundColor: "#fff7ed", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ color: "#f97316", fontSize: 11, fontWeight: "700" }}>?? ATT: {student.attendancePercent}%</Text>
-                    </View>
-                  )}
+                  <Text style={{ color: "gray", marginTop: 3 }}>
+                    Grade {student.grade}
+                    {student.section ? ` - ${student.section}` : ""}
+                    {student.session ? `  |  ${student.session}` : ""}
+                  </Text>
+                  <Text style={{ color: "gray", marginTop: 3 }}>
+                    Roll No: {student.rollNo ?? "—"}
+                    {student.admissionNo ? `  |  Adm: ${student.admissionNo}` : ""}
+                  </Text>
                 </View>
+                {lowAttendance && (
+                  <View style={{ backgroundColor: "#fff7ed", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ color: "#f97316", fontSize: 11, fontWeight: "700" }}>
+                      ATT: {student.attendancePercent}%
+                    </Text>
+                  </View>
+                )}
               </View>
-              <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
-                <TouchableOpacity
-                  onPress={() => router.push({ pathname: "/performance", params: { studentId: student.id } })}
-                  style={{ flex: 1, backgroundColor: "#4f46e5", padding: 10, borderRadius: 10, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}
-                >
-                  <Ionicons name="book" size={16} color="#fff" />
-                  <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Performance</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => router.push({ pathname: "/attendance", params: { studentId: student.id } })}
-                  style={{ flex: 1, backgroundColor: "#0ea5e9", padding: 10, borderRadius: 10, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 }}
-                >
-                  <Ionicons name="bar-chart" size={16} color="#fff" />
-                  <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>Attendance</Text>
-                </TouchableOpacity>
+
+              {/* Sections: 2 x 2 buttons */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 14 }}>
+                {ACTIONS.map((a) => (
+                  <TouchableOpacity
+                    key={a.label}
+                    onPress={() =>
+                      router.push({ pathname: a.route as any, params: { studentId: student.id } })
+                    }
+                    style={{
+                      width: "48%", backgroundColor: a.color, padding: 10, borderRadius: 10,
+                      alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6,
+                    }}
+                  >
+                    <Ionicons name={a.icon as any} size={16} color="#fff" />
+                    <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>{a.label}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             </View>
           );
@@ -279,9 +273,9 @@ export default function Parent() {
       </TouchableOpacity>
 
       <TouchableOpacity
-        onPress={async () => { 
-          await logout(); 
-          router.replace("/login"); 
+        onPress={async () => {
+          await logout();
+          router.replace("/login");
         }}
         style={{ backgroundColor: "#e74c3c", padding: 15, borderRadius: 12, marginTop: 20, alignItems: "center" }}
       >
