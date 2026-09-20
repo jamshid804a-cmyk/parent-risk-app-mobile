@@ -1,7 +1,6 @@
 ﻿const dns = require("node:dns/promises");
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
-
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ObjectId } = require("mongodb");
@@ -15,7 +14,7 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = "school_db";
 
 if (!MONGODB_URI) {
-  console.error("❌ MONGODB_URI not set in .env");
+  console.error("❌ MONGODB_URI not set");
   process.exit(1);
 }
 
@@ -52,7 +51,6 @@ async function isAtRisk(student) {
   return attendance < 75;
 }
 
-// ✅ LOGIN
 app.post("/api/parent/login", async (req, res) => {
   const { phone, password } = req.body;
   try {
@@ -97,7 +95,6 @@ app.post("/api/parent/login", async (req, res) => {
   }
 });
 
-// ✅ REFRESH
 app.get("/api/parent/:parentId/students", async (req, res) => {
   const { parentId } = req.params;
   try {
@@ -127,7 +124,6 @@ app.get("/api/parent/:parentId/students", async (req, res) => {
   }
 });
 
-// ✅ Student by id
 app.get("/api/parent/student", async (req, res) => {
   const { studentId } = req.query;
   try {
@@ -139,7 +135,6 @@ app.get("/api/parent/student", async (req, res) => {
   }
 });
 
-// ✅ All students (for Performance.jsx)
 app.get("/api/students", async (req, res) => {
   try {
     const database = await connectDB();
@@ -150,7 +145,6 @@ app.get("/api/students", async (req, res) => {
   }
 });
 
-// ✅ Attendance
 app.get("/api/attendance", async (req, res) => {
   const { studentId } = req.query;
   try {
@@ -162,7 +156,6 @@ app.get("/api/attendance", async (req, res) => {
   }
 });
 
-// ✅ Notifications
 app.get("/api/notifications", async (req, res) => {
   const { studentId } = req.query;
   try {
@@ -200,7 +193,6 @@ app.delete("/api/notifications", async (req, res) => {
   }
 });
 
-// ✅ Health check
 app.get("/test-students", async (req, res) => {
   try {
     const database = await connectDB();
@@ -211,6 +203,5 @@ app.get("/test-students", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server running on port ${PORT}`));
+// ✅ Vercel export — NO app.listen()
 module.exports = app;
