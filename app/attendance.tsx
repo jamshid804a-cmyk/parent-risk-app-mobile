@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   RefreshControl,
   ScrollView,
@@ -21,102 +22,66 @@ const HEADER_TOP =
 
 interface RawAttendance {
   present?: boolean;
-  status?: string; // "P" | "A" | "L"
+  status?: string;
   day: number;
-  date?: string; // "01/2026"
-  studentId: number | string;
+  date?: string;
+  studentId?: number | string;
 }
 
-interface AttendanceRecord {
+interface DayRecord {
   day: number;
   present: boolean;
-  date: string;
 }
 
-interface WeekData {
-  weekLabel: string;
-  weekStart: number;
-  weekEnd: number;
-  days: { day: number; present: boolean }[];
+interface MonthData {
+  key: string; // "01/2026"
+  label: string; // "January 2026"
+  days: DayRecord[];
+  presentDays: number;
+  totalDaysInMonth: number;
+  percent: number;
 }
 
+// -------- helpers --------
 function daysInMonth(month: string): number {
   const [m, y] = month.split("/").map(Number);
   return new Date(y, m, 0).getDate();
 }
 
-function normalizeRecord(r: RawAttendance): AttendanceRecord {
+function monthLabel(month: string): string {
+  const [m, y] = month.split("/").map(Number);
+  return new Date(y, m - 1, 1).toLocaleString("default", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function normalizeRecord(r: RawAttendance): DayRecord | null {
+  const day = Number(r.day);
+  if (!day || day < 1) return null;
   let present = false;
   if (typeof r.present === "boolean") present = r.present;
   else if (typeof r.status === "string")
     present = r.status.toUpperCase() === "P";
-  return { day: Number(r.day), present, date: r.date || "" };
+  return { day, present };
 }
 
-// ✅ Pick the month with the latest attendance data.
-// If there's data for the current month, use it. Otherwise use the newest month found.
-function pickActiveMonth(all: AttendanceRecord[]): string {
-  if (all.length === 0) {
-    const d = new Date();
-    return `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-  }
-  const counts: Record<string, number> = {};
-  for (const r of all) {
-    if (!r.date) continue;
-    counts[r.date] = (counts[r.date] || 0) + 1;
-  }
-  const months = Object.keys(counts);
-  if (months.length === 0) {
-    const d = new Date();
-    return `${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-  }
-  // Sort by "MM/YYYY" ascending, take the last one
-  months.sort((a, b) => {
-    const [ma, ya] = a.split("/").map(Number);
-    const [mb, yb] = b.split("/").map(Number);
-    return ya * 12 + ma - (yb * 12 + mb);
-  });
-  return months[months.length - 1];
-}
-
-function buildWeeks(records: AttendanceRecord[], month: string): WeekData[] {
+function buildWeeks(days: DayRecord[], month: string) {
   const total = daysInMonth(month);
   const presentMap: Record<number, boolean> = {};
-  for (const r of records) {
-    if (r.day > 0) presentMap[r.day] = r.present;
-  }
-  const weeks: WeekData[] = [];
-  let weekIndex = 1;
+  for (const d of days) presentMap[d.day] = d.present;
+  const weeks = [];
+  let idx = 1;
   for (let start = 1; start <= total; start += 7) {
     const end = Math.min(start + 6, total);
-    const days = [];
+    const list: { day: number; present: boolean }[] = [];
     for (let d = start; d <= end; d++) {
-      days.push({ day: d, present: presentMap[d] ?? false });
+      list.push({ day: d, present: presentMap[d] ?? false });
     }
-    weeks.push({
-      weekLabel: `Week ${weekIndex}`,
-      weekStart: start,
-      weekEnd: end,
-      days,
-    });
-    weekIndex++;
+    weeks.push({ weekLabel: `Week ${idx}`, weekStart: start, weekEnd: end, days: list });
+    idx++;
   }
   return weeks;
-}
-
-// ✅ Percent over days that have already passed (or whole month if it's a past month)
-function calcPercent(records: AttendanceRecord[], month: string): number {
-  const today = new Date();
-  const [m, y] = month.split("/").map(Number);
-  const isCurrentMonth =
-    today.getMonth() + 1 === m && today.getFullYear() === y;
-  const lastDay = isCurrentMonth ? today.getDate() : daysInMonth(month);
-
-  const presentDays = records.filter(
-    (r) => r.day > 0 && r.day <= lastDay && r.present
-  ).length;
-
-  return Math.round((presentDays / lastDay) * 100);
 }
 
 export default function AttendanceScreen() {
@@ -135,51 +100,86 @@ export default function AttendanceScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [percent, setPercent] = useState(0);
-  const [weeks, setWeeks] = useState<WeekData[]>([]);
-  const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [activeMonth, setActiveMonth] = useState<string>("");
+  const [months, setMonths] = useState<MonthData[]>([]);
+  // Which months are expanded (default: all expanded)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // Prevent "expand all" from firing on every reload
+  const [initialized, setInitialized] = useState(false);
 
-  useEffect(() => {
-    if (user) fetchAttendance();
-  }, [user, studentIdNum]);
-
-  async function fetchAttendance() {
-    setLoading(true);
+  const fetchAttendance = useCallback(async () => {
+    if (!student) {
+      setError("Student not found");
+      setLoading(false);
+      return;
+    }
     setError(null);
     try {
-      if (!student) {
-        setError("Student not found.");
-        setLoading(false);
-        return;
-      }
-      const url = `${BASE_URL}/api/attendance?studentId=${student.id}`;
-      const res = await fetch(url);
+      const res = await fetch(
+        `${BASE_URL}/api/attendance?studentId=${student.id}`
+      );
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
-
       const raw: RawAttendance[] = Array.isArray(data)
         ? data
         : data.attendance || [];
 
-      const all = raw.map(normalizeRecord);
+      // Group by month
+      const byMonth: Record<string, DayRecord[]> = {};
+      for (const r of raw) {
+        const month = String(r.date || "");
+        if (!month) continue;
+        const rec = normalizeRecord(r);
+        if (!rec) continue;
+        if (!byMonth[month]) byMonth[month] = [];
+        byMonth[month].push(rec);
+      }
 
-      // ✅ Pick the month with the newest data
-      const month = pickActiveMonth(all);
+      // Build MonthData, newest first
+      const list: MonthData[] = Object.keys(byMonth)
+        .sort((a, b) => {
+          const [ma, ya] = a.split("/").map(Number);
+          const [mb, yb] = b.split("/").map(Number);
+          return yb * 12 + mb - (ya * 12 + ma);
+        })
+        .map((key) => {
+          const days = byMonth[key];
+          const presentDays = days.filter((d) => d.present).length;
+          const totalDaysInMonth = daysInMonth(key);
+          const percent = Math.round(
+            (presentDays / totalDaysInMonth) * 100
+          );
+          return {
+            key,
+            label: monthLabel(key),
+            days,
+            presentDays,
+            totalDaysInMonth,
+            percent,
+          };
+        });
 
-      // ✅ Only keep records for that month
-      const monthOnly = all.filter((r) => r.date === month);
+      setMonths(list);
 
-      setActiveMonth(month);
-      setRecords(monthOnly);
-      setWeeks(buildWeeks(monthOnly, month));
-      setPercent(calcPercent(monthOnly, month));
+      // Default: expand all months on first load only
+      if (!initialized) {
+        const exp: Record<string, boolean> = {};
+        list.forEach((m) => (exp[m.key] = true));
+        setExpanded(exp);
+        setInitialized(true);
+      }
     } catch (e: any) {
-      setError(e.message || "Failed to load attendance.");
+      setError(e.message || "Failed to load attendance");
     } finally {
       setLoading(false);
     }
-  }
+  }, [student, initialized]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      fetchAttendance();
+    }, [fetchAttendance])
+  );
 
   async function onRefresh() {
     setRefreshing(true);
@@ -187,6 +187,41 @@ export default function AttendanceScreen() {
     setRefreshing(false);
   }
 
+  function toggleMonth(key: string) {
+    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function confirmDeleteMonth(key: string) {
+    Alert.alert(
+      "Delete Attendance",
+      `Delete all attendance for ${monthLabel(key)}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteMonth(key),
+        },
+      ]
+    );
+  }
+
+  async function deleteMonth(key: string) {
+    if (!student) return;
+    try {
+      const res = await fetch(
+        `${BASE_URL}/api/attendance/month?studentId=${student.id}&month=${encodeURIComponent(key)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) throw new Error("Delete failed");
+      // Remove locally
+      setMonths((prev) => prev.filter((m) => m.key !== key));
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Could not delete month");
+    }
+  }
+
+  // --- loading / error ---
   if (loading) {
     return (
       <View style={styles.center}>
@@ -209,29 +244,15 @@ export default function AttendanceScreen() {
           <Ionicons name="refresh" size={16} color="#fff" />
           <Text style={{ color: "#fff", fontWeight: "700" }}>Try Again</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={{ marginTop: 12 }}
-        >
+        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 12 }}>
           <Text style={{ color: "#4338ca", fontWeight: "600" }}>Go back</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  const month = activeMonth || "01/2026";
-  const [m, y] = month.split("/");
-  const monthName = new Date(Number(y), Number(m) - 1, 1).toLocaleString(
-    "default",
-    { month: "long", year: "numeric" }
-  );
   const studentName = student?.name || "Your Child";
   const grade = student?.grade || "";
-  const presentDays = records.filter((r) => r.present).length;
-  const totalDays = daysInMonth(month);
-  const atRisk = percent < 75;
-  const needsMore = Math.max(0, 75 - percent);
-  const accent = atRisk ? "#ef4444" : "#22c55e";
 
   return (
     <View style={styles.safe}>
@@ -249,6 +270,7 @@ export default function AttendanceScreen() {
           />
         }
       >
+        {/* ---- Fixed top hero (name, grade) ---- */}
         <View style={styles.hero}>
           <View style={styles.circleA} />
           <View style={styles.circleB} />
@@ -267,14 +289,7 @@ export default function AttendanceScreen() {
           </View>
 
           <Text style={styles.heroName}>{studentName}</Text>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              marginTop: 8,
-            }}
-          >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 }}>
             {!!grade && (
               <View style={styles.heroChip}>
                 <Text style={styles.heroChipText}>Grade {grade}</Text>
@@ -282,204 +297,303 @@ export default function AttendanceScreen() {
             )}
             <View style={styles.heroChip}>
               <Ionicons name="calendar" size={12} color="#fff" />
-              <Text style={styles.heroChipText}>{monthName}</Text>
+              <Text style={styles.heroChipText}>
+                {months.length} {months.length === 1 ? "month" : "months"}
+              </Text>
             </View>
           </View>
         </View>
 
         <View style={{ paddingHorizontal: 16 }}>
-          <View style={[styles.card, { marginTop: -34 }]}>
-            <View style={styles.cardHeader}>
+          {months.length === 0 ? (
+            <View style={[styles.emptyCard, { marginTop: -34 }]}>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="calendar-outline" size={30} color="#4338ca" />
+              </View>
+              <Text style={styles.emptyTitle}>No attendance yet</Text>
+              <Text style={styles.emptySub}>
+                Attendance added by the school will appear here.
+              </Text>
+            </View>
+          ) : (
+            months.map((m, idx) => (
+              <MonthCard
+                key={m.key}
+                month={m}
+                expanded={!!expanded[m.key]}
+                first={idx === 0}
+                onToggle={() => toggleMonth(m.key)}
+                onDelete={() => confirmDeleteMonth(m.key)}
+              />
+            ))
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function MonthCard({
+  month,
+  expanded,
+  first,
+  onToggle,
+  onDelete,
+}: {
+  month: MonthData;
+  expanded: boolean;
+  first: boolean;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  const atRisk = month.percent < 75;
+  const accent = atRisk ? "#ef4444" : "#22c55e";
+  const weeks = useMemo(
+    () => buildWeeks(month.days, month.key),
+    [month.days, month.key]
+  );
+  const needsMore = Math.max(0, 75 - month.percent);
+
+  if (!expanded) {
+    // ---- Collapsed short box ----
+    return (
+      <View
+        style={[
+          styles.collapsedBox,
+          { marginTop: first ? -34 : 12 },
+        ]}
+      >
+        <View
+          style={[
+            styles.avatar,
+            { backgroundColor: atRisk ? "#fee2e2" : "#dcfce7" },
+          ]}
+        >
+          <Text
+            style={[
+              styles.avatarText,
+              { color: atRisk ? "#dc2626" : "#16a34a" },
+            ]}
+          >
+            {month.label.charAt(0)}
+          </Text>
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text style={styles.collapsedMonth}>{month.label}</Text>
+          <Text style={styles.collapsedMeta}>
+            {month.presentDays}/{month.totalDaysInMonth} days
+          </Text>
+        </View>
+
+        <Text style={[styles.collapsedPercent, { color: accent }]}>
+          {month.percent}%
+        </Text>
+
+        <TouchableOpacity onPress={onToggle} style={styles.toggleBtnSmall}>
+          <Ionicons name="chevron-down" size={18} color="#4338ca" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={onDelete}
+          style={styles.deleteBtnSmall}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="trash-outline" size={18} color="#ef4444" />
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // ---- Expanded full card ----
+  return (
+    <View style={[styles.card, { marginTop: first ? -34 : 14 }]}>
+      {/* Card header: month + buttons */}
+      <View style={styles.cardTopRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardMonth}>{month.label}</Text>
+          <Text style={styles.cardMonthSub}>
+            {month.presentDays} of {month.totalDaysInMonth} days present
+          </Text>
+        </View>
+
+        <TouchableOpacity onPress={onToggle} style={styles.toggleBtn}>
+          <Text style={styles.toggleText}>Show less</Text>
+          <Ionicons name="chevron-up" size={16} color="#4338ca" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={onDelete}
+          style={styles.deleteBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="trash-outline" size={18} color="#ef4444" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Percent + progress bar */}
+      <View style={styles.statRow}>
+        <View
+          style={[
+            styles.avatar,
+            { backgroundColor: atRisk ? "#fee2e2" : "#dcfce7" },
+          ]}
+        >
+          <Text
+            style={[
+              styles.avatarText,
+              { color: atRisk ? "#dc2626" : "#16a34a" },
+            ]}
+          >
+            {month.label.charAt(0)}
+          </Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.studentName}>{month.label}</Text>
+          <Text style={styles.studentGrade}>
+            {month.presentDays} of {month.totalDaysInMonth} days present
+          </Text>
+        </View>
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={[styles.percentBig, { color: accent }]}>
+            {month.percent}%
+          </Text>
+          <Text style={styles.daysSmall}>this month</Text>
+        </View>
+      </View>
+
+      <View style={styles.barBg}>
+        <View
+          style={[
+            styles.barFill,
+            {
+              width: `${Math.min(month.percent, 100)}%` as any,
+              backgroundColor: accent,
+            },
+          ]}
+        />
+        <View style={styles.barMarker} />
+      </View>
+      <View style={styles.barLabels}>
+        <Text style={styles.barLabel}>0%</Text>
+        <Text style={styles.barMarkerLabel}>75% required</Text>
+        <Text style={styles.barLabel}>100%</Text>
+      </View>
+
+      {/* Banner */}
+      <View style={[styles.banner, atRisk ? styles.bannerRisk : styles.bannerGood]}>
+        <View
+          style={[
+            styles.bannerIcon,
+            { backgroundColor: atRisk ? "#fee2e2" : "#dcfce7" },
+          ]}
+        >
+          <Ionicons
+            name={atRisk ? "warning" : "checkmark-circle"}
+            size={22}
+            color={atRisk ? "#b91c1c" : "#15803d"}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={[
+              styles.bannerTitle,
+              atRisk ? styles.riskText : styles.goodText,
+            ]}
+          >
+            {atRisk ? "At-Risk Student" : "Good Attendance"}
+          </Text>
+          <Text
+            style={[
+              styles.bannerSub,
+              atRisk ? styles.riskSubText : styles.goodSubText,
+            ]}
+          >
+            {month.percent}% this month
+            {atRisk ? ". Below 75% threshold." : ". Keep it up!"}
+          </Text>
+        </View>
+      </View>
+
+      {/* Weekly breakdown */}
+      <View style={styles.sectionHead}>
+        <View style={styles.sectionIcon}>
+          <Ionicons name="calendar" size={16} color="#4338ca" />
+        </View>
+        <Text style={styles.cardTitle}>Weekly Breakdown</Text>
+      </View>
+
+      {weeks.map((w, i) => {
+        const wPresent = w.days.filter((d) => d.present).length;
+        const wPercent = Math.round((wPresent / w.days.length) * 100);
+        const wAtRisk = wPercent < 75;
+        return (
+          <View
+            key={w.weekLabel}
+            style={[
+              styles.weekBlock,
+              i === weeks.length - 1 && { marginBottom: 0 },
+            ]}
+          >
+            <View style={styles.weekHeader}>
+              <Text style={styles.weekLabel}>{w.weekLabel}</Text>
+              <Text style={styles.weekRange}>
+                Days {w.weekStart}-{w.weekEnd}
+              </Text>
               <View
                 style={[
-                  styles.avatar,
-                  { backgroundColor: atRisk ? "#fee2e2" : "#dcfce7" },
+                  styles.weekPill,
+                  { backgroundColor: wAtRisk ? "#fee2e2" : "#dcfce7" },
                 ]}
               >
                 <Text
                   style={[
-                    styles.avatarText,
-                    { color: atRisk ? "#dc2626" : "#16a34a" },
+                    styles.weekPercent,
+                    { color: wAtRisk ? "#dc2626" : "#16a34a" },
                   ]}
                 >
-                  {studentName.charAt(0).toUpperCase()}
+                  {wPercent}%
                 </Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.studentName}>{studentName}</Text>
-                <Text style={styles.studentGrade}>
-                  {presentDays} of {totalDays} days present
-                </Text>
-              </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={[styles.percentBig, { color: accent }]}>
-                  {percent}%
-                </Text>
-                <Text style={styles.daysSmall}>this month</Text>
-              </View>
             </View>
-
-            <View style={styles.barBg}>
-              <View
-                style={[
-                  styles.barFill,
-                  {
-                    width: `${Math.min(percent, 100)}%` as any,
-                    backgroundColor: accent,
-                  },
-                ]}
-              />
-              <View style={styles.barMarker} />
-            </View>
-            <View style={styles.barLabels}>
-              <Text style={styles.barLabel}>0%</Text>
-              <Text style={styles.barMarkerLabel}>75% required</Text>
-              <Text style={styles.barLabel}>100%</Text>
-            </View>
-          </View>
-
-          <View
-            style={[
-              styles.banner,
-              atRisk ? styles.bannerRisk : styles.bannerGood,
-            ]}
-          >
-            <View
-              style={[
-                styles.bannerIcon,
-                { backgroundColor: atRisk ? "#fee2e2" : "#dcfce7" },
-              ]}
-            >
-              <Ionicons
-                name={atRisk ? "warning" : "checkmark-circle"}
-                size={22}
-                color={atRisk ? "#b91c1c" : "#15803d"}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text
-                style={[
-                  styles.bannerTitle,
-                  atRisk ? styles.riskText : styles.goodText,
-                ]}
-              >
-                {atRisk ? "At-Risk Student" : "Good Attendance"}
-              </Text>
-              <Text
-                style={[
-                  styles.bannerSub,
-                  atRisk ? styles.riskSubText : styles.goodSubText,
-                ]}
-              >
-                {studentName} - {percent}% this month
-                {atRisk ? ". Below 75% threshold." : ". Keep it up!"}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.card}>
-            <View style={styles.sectionHead}>
-              <View style={styles.sectionIcon}>
-                <Ionicons name="calendar" size={16} color="#4338ca" />
-              </View>
-              <Text style={styles.cardTitle}>Weekly Breakdown</Text>
-            </View>
-
-            {weeks.length === 0 ? (
-              <Text style={styles.emptyText}>No attendance data yet.</Text>
-            ) : (
-              weeks.map((week, i) => {
-                const wPresent = week.days.filter((d) => d.present).length;
-                const wPercent = Math.round(
-                  (wPresent / week.days.length) * 100
-                );
-                const wAtRisk = wPercent < 75;
-                return (
-                  <View
-                    key={week.weekLabel}
+            <View style={styles.dotsRow}>
+              {w.days.map((d) => (
+                <View
+                  key={d.day}
+                  style={[
+                    styles.dayDot,
+                    d.present
+                      ? { backgroundColor: "#22c55e" }
+                      : {
+                          backgroundColor: "#f1f5f9",
+                          borderWidth: 1,
+                          borderColor: "#e2e8f0",
+                        },
+                  ]}
+                >
+                  <Text
                     style={[
-                      styles.weekBlock,
-                      i === weeks.length - 1 && { marginBottom: 0 },
+                      styles.dayDotText,
+                      { color: d.present ? "#fff" : "#94a3b8" },
                     ]}
                   >
-                    <View style={styles.weekHeader}>
-                      <Text style={styles.weekLabel}>{week.weekLabel}</Text>
-                      <Text style={styles.weekRange}>
-                        Days {week.weekStart}-{week.weekEnd}
-                      </Text>
-                      <View
-                        style={[
-                          styles.weekPill,
-                          { backgroundColor: wAtRisk ? "#fee2e2" : "#dcfce7" },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.weekPercent,
-                            { color: wAtRisk ? "#dc2626" : "#16a34a" },
-                          ]}
-                        >
-                          {wPercent}%
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.dotsRow}>
-                      {week.days.map((d) => (
-                        <View
-                          key={d.day}
-                          style={[
-                            styles.dayDot,
-                            d.present
-                              ? { backgroundColor: "#22c55e" }
-                              : {
-                                  backgroundColor: "#f1f5f9",
-                                  borderWidth: 1,
-                                  borderColor: "#e2e8f0",
-                                },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.dayDotText,
-                              { color: d.present ? "#fff" : "#94a3b8" },
-                            ]}
-                          >
-                            {d.day}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                );
-              })
-            )}
-
-            <View style={styles.legend}>
-              <View style={styles.legendItem}>
-                <View
-                  style={[styles.legendDot, { backgroundColor: "#22c55e" }]}
-                />
-                <Text style={styles.legendText}>Present</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View
-                  style={[styles.legendDot, { backgroundColor: "#e2e8f0" }]}
-                />
-                <Text style={styles.legendText}>Absent</Text>
-              </View>
+                    {d.day}
+                  </Text>
+                </View>
+              ))}
             </View>
           </View>
+        );
+      })}
 
-          {atRisk && (
-            <View style={styles.warningCard}>
-              <Ionicons name="trending-up" size={20} color="#dc2626" />
-              <Text style={styles.warningText}>
-                Needs {needsMore}% more to reach 75% threshold
-              </Text>
-            </View>
-          )}
+      {atRisk && (
+        <View style={styles.warningCard}>
+          <Ionicons name="trending-up" size={20} color="#dc2626" />
+          <Text style={styles.warningText}>
+            Needs {needsMore}% more to reach 75% threshold
+          </Text>
         </View>
-      </ScrollView>
+      )}
     </View>
   );
 }
@@ -563,12 +677,69 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     ...shadow,
   },
-  cardTitle: { fontSize: 16, fontWeight: "800", color: "#0f172a" },
-  cardHeader: {
+  cardTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  cardMonth: { fontSize: 17, fontWeight: "800", color: "#0f172a" },
+  cardMonthSub: { fontSize: 12, color: "#64748b", marginTop: 2 },
+
+  toggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#eef2ff",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  toggleText: { fontSize: 11, fontWeight: "800", color: "#4338ca" },
+  deleteBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#fef2f2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  collapsedBox: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 12,
+    ...shadow,
+  },
+  collapsedMonth: { fontSize: 15, fontWeight: "800", color: "#0f172a" },
+  collapsedMeta: { fontSize: 11.5, color: "#64748b", marginTop: 2 },
+  collapsedPercent: { fontSize: 18, fontWeight: "800", marginRight: 6 },
+  toggleBtnSmall: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#eef2ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteBtnSmall: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#fef2f2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  statRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 14,
   },
   avatar: {
     width: 48,
@@ -601,7 +772,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: "#f97316",
   },
-  barLabels: { flexDirection: "row", justifyContent: "space-between" },
+  barLabels: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
   barLabel: { fontSize: 10, color: "#94a3b8" },
   barMarkerLabel: { fontSize: 10, color: "#f97316", fontWeight: "700" },
 
@@ -634,7 +805,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   sectionIcon: {
     width: 32,
@@ -644,6 +815,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  cardTitle: { fontSize: 16, fontWeight: "800", color: "#0f172a" },
+
   weekBlock: {
     marginBottom: 18,
     backgroundColor: "#f8fafc",
@@ -669,17 +842,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   dayDotText: { fontSize: 11, fontWeight: "700" },
-  legend: {
-    flexDirection: "row",
-    gap: 18,
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: "#f1f5f9",
-  },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 7 },
-  legendDot: { width: 12, height: 12, borderRadius: 4 },
-  legendText: { fontSize: 12, color: "#64748b" },
 
   warningCard: {
     flexDirection: "row",
@@ -690,14 +852,34 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: "#fecaca",
+    marginTop: 12,
   },
   warningText: { flex: 1, fontSize: 13, color: "#dc2626", fontWeight: "700" },
-  emptyText: {
-    fontSize: 14,
-    color: "#94a3b8",
-    textAlign: "center",
-    paddingVertical: 12,
+
+  emptyCard: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 28,
+    alignItems: "center",
+    ...shadow,
   },
+  emptyIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#e0e7ff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
+  emptySub: {
+    color: "#64748b",
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 20,
+  },
+
   loadingText: { color: "#64748b", marginTop: 8 },
   errorIcon: {
     width: 72,

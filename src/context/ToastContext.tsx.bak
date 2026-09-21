@@ -1,0 +1,151 @@
+import { router } from "expo-router";
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useRef,
+    useState,
+} from "react";
+import { AppState } from "react-native";
+import { SmartToast, ToastData } from "../components/SmartToast";
+import { playNotificationSound } from "../utils/sound";
+import { useAuth } from "./AuthContext";
+
+const BASE_URL = "https://parentriskapp-backend.vercel.app";
+const POLL_MS = 10000;
+
+type ToastContextType = {
+  showToast: (t: Omit<ToastData, "id">) => void;
+};
+
+const ToastContext = createContext<ToastContextType>({
+  showToast: () => {},
+});
+
+export const useToast = () => useContext(ToastContext);
+
+function mapType(t: string): ToastData["type"] {
+  if (t === "academic") return "academic";
+  if (t === "fee") return "fee";
+  if (t === "attendance") return "attendance";
+  return "info";
+}
+
+function isUnread(n: any): boolean {
+  return n?.readStatus === false || n?.readStatus === 0;
+}
+
+export const ToastProvider = ({ children }: any) => {
+  const { user } = useAuth();
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const initializedRef = useRef(false);
+  const busyRef = useRef(false);
+  const appState = useRef(AppState.currentState);
+
+  const showToast = useCallback((t: Omit<ToastData, "id">) => {
+    const id = String(Date.now()) + Math.random().toString(36).slice(2, 8);
+    setToast({ id, ...t });
+  }, []);
+
+  const poll = useCallback(async () => {
+    if (busyRef.current) return;
+    const students = user?.students || [];
+    if (students.length === 0) return;
+
+    busyRef.current = true;
+    try {
+      const all: any[] = [];
+      for (const s of students) {
+        try {
+          const res = await fetch(
+            `${BASE_URL}/api/notifications?studentId=${s.id}`
+          );
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            data.forEach((n: any) => {
+              n._studentName = s.name;
+              n._studentId = s.id;
+            });
+            all.push(...data);
+          }
+        } catch {
+          // ignore this student
+        }
+      }
+
+      // Sort newest first
+      all.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      if (!initializedRef.current) {
+        // First poll: remember everything, do NOT fire toasts
+        all.forEach((n) => seenIdsRef.current.add(String(n.id)));
+        initializedRef.current = true;
+        return;
+      }
+
+      // Find new unread notifications
+      const fresh = all.filter(
+        (n) => isUnread(n) && !seenIdsRef.current.has(String(n.id))
+      );
+
+      fresh.forEach((n) => seenIdsRef.current.add(String(n.id)));
+
+      if (fresh.length > 0) {
+        // Show toast for the newest one
+        const n = fresh[0];
+        const type = mapType(n.type);
+        showToast({
+          title: n._studentName ? `${n._studentName}` : "New Notification",
+          message: n.message || "You have a new notification",
+          type,
+          onPress: () => {
+            router.push("/notification");
+          },
+        });
+
+        // Play sound for each type (silent in Expo Go)
+        try {
+          await playNotificationSound(type);
+        } catch {}
+      }
+    } finally {
+      busyRef.current = false;
+    }
+  }, [user, showToast]);
+
+  // Poll every 10 seconds while logged in
+  useEffect(() => {
+    if (!user) {
+      seenIdsRef.current.clear();
+      initializedRef.current = false;
+      return;
+    }
+    poll();
+    const t = setInterval(poll, POLL_MS);
+    return () => clearInterval(t);
+  }, [user, poll]);
+
+  // Poll when the app comes back to foreground
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (appState.current.match(/inactive|background/) && next === "active") {
+        poll();
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
+  }, [poll]);
+
+  return (
+    <ToastContext.Provider value={{ showToast }}>
+      {children}
+      <SmartToast toast={toast} onDismiss={() => setToast(null)} />
+    </ToastContext.Provider>
+  );
+};

@@ -236,6 +236,26 @@ app.get("/api/attendance", async (req, res) => {
   }
 });
 
+// ✅ DELETE all attendance records for a student in one month
+// Example: /api/attendance/month?studentId=1&month=01/2026
+app.delete("/api/attendance/month", async (req, res) => {
+  const { studentId, month } = req.query;
+  try {
+    if (!studentId || !month) {
+      return res
+        .status(400)
+        .json({ error: "studentId and month are required" });
+    }
+    const database = await connectDB();
+    const result = await database
+      .collection("attendance")
+      .deleteMany({ studentId: String(studentId), date: String(month) });
+    res.json({ success: true, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // =====================================================
 // TESTS
 // =====================================================

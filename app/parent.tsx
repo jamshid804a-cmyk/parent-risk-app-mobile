@@ -3,7 +3,9 @@ import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   AppState,
+  Easing,
   Platform,
   RefreshControl,
   ScrollView,
@@ -69,28 +71,147 @@ function InfoTile({ icon, label, value }: { icon: string; label: string; value: 
   );
 }
 
+// ✅ Animated bell badge
+function BellBadge({ count, headerBg }: { count: number; headerBg: string }) {
+  const scale = useRef(new Animated.Value(count > 0 ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(scale, {
+      toValue: count > 0 ? 1 : 0,
+      friction: 5,
+      tension: 140,
+      useNativeDriver: true,
+    }).start();
+  }, [count, scale]);
+
+  if (count <= 0) return null;
+
+  return (
+    <Animated.View
+      style={{
+        position: "absolute",
+        top: -3,
+        right: -3,
+        backgroundColor: C.danger,
+        borderRadius: 10,
+        minWidth: 19,
+        height: 19,
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: 4,
+        borderWidth: 2,
+        borderColor: headerBg,
+        transform: [{ scale }],
+      }}
+    >
+      <Text style={{ color: "#fff", fontSize: 10, fontWeight: "800" }}>{count}</Text>
+    </Animated.View>
+  );
+}
+
+// ✅ Bell that wiggles when new items arrive
+function AnimatedBell({ trigger }: { trigger: number }) {
+  const wiggle = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (trigger <= 0) return;
+    Animated.sequence([
+      Animated.timing(wiggle, { toValue: 1, duration: 80, easing: Easing.linear, useNativeDriver: true }),
+      Animated.timing(wiggle, { toValue: -1, duration: 80, easing: Easing.linear, useNativeDriver: true }),
+      Animated.timing(wiggle, { toValue: 1, duration: 80, easing: Easing.linear, useNativeDriver: true }),
+      Animated.timing(wiggle, { toValue: 0, duration: 100, easing: Easing.linear, useNativeDriver: true }),
+    ]).start();
+  }, [trigger, wiggle]);
+
+  const rotate = wiggle.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: ["-14deg", "0deg", "14deg"],
+  });
+
+  return (
+    <Animated.View style={{ transform: [{ rotate }] }}>
+      <Ionicons name="notifications" size={20} color="#fff" />
+    </Animated.View>
+  );
+}
+
+// ✅ Number that pulses when it changes
+function AnimatedNumber({ value }: { value: number }) {
+  const anim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.timing(anim, { toValue: 1.35, duration: 150, useNativeDriver: true }),
+      Animated.spring(anim, { toValue: 1, friction: 4, useNativeDriver: true }),
+    ]).start();
+  }, [value, anim]);
+
+  return (
+    <Animated.Text
+      style={{ color: "#fff", fontSize: 20, fontWeight: "800", transform: [{ scale: anim }] }}
+    >
+      {value}
+    </Animated.Text>
+  );
+}
+
 export default function Parent() {
   const { user, logout, refreshUser } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefreshing, setAutoRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [bellTrigger, setBellTrigger] = useState(0);
 
   const appState = useRef(AppState.currentState);
   const busyRef = useRef(false);
   const refreshUserRef = useRef(refreshUser);
-  refreshUserRef.current = refreshUser; // always the latest function
+  refreshUserRef.current = refreshUser;
+
+  const prevUnreadRef = useRef(0);
 
   const studentList: any[] = user?.students || [];
   const totalStudents = studentList.length;
 
-  // Silent refresh (focus, foreground, timer)
+  // ✅ Fetch unread counts for all children
+  const fetchUnread = useCallback(async () => {
+    if (studentList.length === 0) {
+      setUnreadCount(0);
+      return;
+    }
+    try {
+      const counts = await Promise.all(
+        studentList.map(async (s: any) => {
+          try {
+            const res = await fetch(`${BASE_URL}/api/notifications?studentId=${s.id}`);
+            if (!res.ok) return 0;
+            const data = await res.json();
+            const arr = Array.isArray(data) ? data : [];
+            // ✅ Correct field: readStatus (false = unread)
+            return arr.filter((n: any) => n.readStatus === false || n.readStatus === 0).length;
+          } catch {
+            return 0;
+          }
+        })
+      );
+      const total = counts.reduce((a, b) => a + b, 0);
+      setUnreadCount((prev) => {
+        if (total > prev) setBellTrigger((t) => t + 1);
+        return total;
+      });
+      prevUnreadRef.current = total;
+    } catch (e) {
+      console.log("fetchUnread error:", e);
+    }
+  }, [studentList]);
+
   const doRefresh = useCallback(async () => {
     if (busyRef.current) return;
     busyRef.current = true;
     setAutoRefreshing(true);
     try {
       await refreshUserRef.current();
+      await fetchUnread();
       setLastUpdated(new Date());
     } catch (e) {
       console.log("Auto-refresh error:", e);
@@ -98,13 +219,13 @@ export default function Parent() {
       busyRef.current = false;
       setAutoRefreshing(false);
     }
-  }, []);
+  }, [fetchUnread]);
 
-  // Pull-to-refresh
   const handleManualRefresh = async () => {
     setRefreshing(true);
     try {
       await refreshUserRef.current();
+      await fetchUnread();
       setLastUpdated(new Date());
     } catch (e) {
       console.log("Manual refresh error:", e);
@@ -113,14 +234,14 @@ export default function Parent() {
     }
   };
 
-  // Refresh when the screen is focused
+  // Refresh on focus
   useFocusEffect(
     useCallback(() => {
       doRefresh();
     }, [doRefresh])
   );
 
-  // Refresh when the app returns to the foreground
+  // Refresh when app returns to foreground
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
       if (appState.current.match(/inactive|background/) && next === "active") {
@@ -131,41 +252,17 @@ export default function Parent() {
     return () => sub.remove();
   }, [doRefresh]);
 
-  // Refresh every 30 seconds
+  // ✅ Refresh every 20 seconds (was 30s) for snappier badge updates
   useEffect(() => {
     if (!user) return;
-    const t = setInterval(doRefresh, 30000);
+    const t = setInterval(doRefresh, 20000);
     return () => clearInterval(t);
   }, [user, doRefresh]);
 
-  // Recount unread notifications whenever the student list changes
+  // Fetch unread when student list changes
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (studentList.length === 0) {
-        setUnreadCount(0);
-        return;
-      }
-      const counts = await Promise.all(
-        studentList.map(async (s: any) => {
-          try {
-            const res = await fetch(`${BASE_URL}/api/notifications?studentId=${s.id}`);
-            if (!res.ok) return 0;
-            const data = await res.json();
-            return (Array.isArray(data) ? data : []).filter(
-              (n: any) => Number(n.read_status) === 0
-            ).length;
-          } catch {
-            return 0;
-          }
-        })
-      );
-      if (!cancelled) setUnreadCount(counts.reduce((a, b) => a + b, 0));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.students]);
+    fetchUnread();
+  }, [user?.students, fetchUnread]);
 
   if (autoRefreshing && totalStudents === 0) {
     return (
@@ -193,7 +290,7 @@ export default function Parent() {
           />
         }
       >
-        {/* ================= HEADER ================= */}
+        {/* HEADER */}
         <View
           style={{
             backgroundColor: C.header,
@@ -249,19 +346,8 @@ export default function Parent() {
                   justifyContent: "center", backgroundColor: "rgba(255,255,255,0.14)",
                 }}
               >
-                <Ionicons name="notifications" size={20} color="#fff" />
-                {unreadCount > 0 && (
-                  <View
-                    style={{
-                      position: "absolute", top: -3, right: -3, backgroundColor: C.danger,
-                      borderRadius: 10, minWidth: 19, height: 19, alignItems: "center",
-                      justifyContent: "center", paddingHorizontal: 4, borderWidth: 2,
-                      borderColor: C.header,
-                    }}
-                  >
-                    <Text style={{ color: "#fff", fontSize: 10, fontWeight: "800" }}>{unreadCount}</Text>
-                  </View>
-                )}
+                <AnimatedBell trigger={bellTrigger} />
+                <BellBadge count={unreadCount} headerBg={C.header} />
               </TouchableOpacity>
             </View>
           </View>
@@ -311,7 +397,7 @@ export default function Parent() {
                 <Ionicons name="mail-unread" size={19} color="#fff" />
               </View>
               <View>
-                <Text style={{ color: "#fff", fontSize: 20, fontWeight: "800" }}>{unreadCount}</Text>
+                <AnimatedNumber value={unreadCount} />
                 <Text style={{ color: "#c7d2fe", fontSize: 12 }}>Unread alerts</Text>
               </View>
             </View>
@@ -326,9 +412,7 @@ export default function Parent() {
             ) : (
               <>
                 <View
-                  style={{
-                    width: 8, height: 8, borderRadius: 4, backgroundColor: "#34d399", marginRight: 8,
-                  }}
+                  style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#34d399", marginRight: 8 }}
                 />
                 <Text style={{ color: "#a5b4fc", fontSize: 12 }}>
                   {lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString()}` : "Up to date"}
@@ -338,9 +422,8 @@ export default function Parent() {
           </View>
         </View>
 
-        {/* ================= BODY ================= */}
+        {/* BODY */}
         <View style={{ paddingHorizontal: 16 }}>
-          {/* Section title */}
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 26, marginBottom: 12, paddingHorizontal: 4 }}>
             <Text style={{ fontSize: 20, fontWeight: "800", color: C.ink }}>My Children</Text>
             <View style={{ backgroundColor: "#e0e7ff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 4 }}>
@@ -350,7 +433,6 @@ export default function Parent() {
             </View>
           </View>
 
-          {/* Big box that holds all students of this number */}
           <View
             style={{
               backgroundColor: "#e6e9f8", borderRadius: 30, padding: 10,
@@ -358,11 +440,7 @@ export default function Parent() {
             }}
           >
             {studentList.length === 0 ? (
-              <View
-                style={{
-                  backgroundColor: C.card, borderRadius: 24, padding: 28, alignItems: "center",
-                }}
-              >
+              <View style={{ backgroundColor: C.card, borderRadius: 24, padding: 28, alignItems: "center" }}>
                 <View
                   style={{
                     width: 68, height: 68, borderRadius: 34, backgroundColor: "#e0e7ff",
@@ -390,7 +468,6 @@ export default function Parent() {
                       marginBottom: index === studentList.length - 1 ? 0 : 12, ...shadow,
                     }}
                   >
-                    {/* Curved student information header */}
                     <View
                       style={{
                         backgroundColor: C.primarySoft, padding: 16, paddingBottom: 20,
@@ -454,7 +531,6 @@ export default function Parent() {
                       </View>
                     </View>
 
-                    {/* Clickable sections */}
                     <View style={{ paddingHorizontal: 16, paddingVertical: 6 }}>
                       {ACTIONS.map((a, i) => (
                         <TouchableOpacity
@@ -491,7 +567,7 @@ export default function Parent() {
             )}
           </View>
 
-          {/* Notifications */}
+          {/* Notifications card */}
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => router.push("/notification")}
@@ -527,7 +603,6 @@ export default function Parent() {
             <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
           </TouchableOpacity>
 
-          {/* Logout */}
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={async () => {
