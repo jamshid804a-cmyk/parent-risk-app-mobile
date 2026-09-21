@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,46 +12,92 @@ import {
   View,
 } from "react-native";
 import { useAuth } from "../src/context/AuthContext";
+import {
+  isSoundEnabled,
+  playNotificationSound,
+  setSoundEnabled,
+} from "../src/utils/sound";
 
 const BASE_URL = "https://parentriskapp-backend.vercel.app";
 
 export default function Notification() {
   const { user } = useAuth();
+  const students = user?.students || [];
+
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [soundOn, setSoundOn] = useState(true);
+  const previousUnreadRef = useRef<number | null>(null);
+
+  // Load saved sound setting on mount
+  useEffect(() => {
+    (async () => {
+      setSoundOn(await isSoundEnabled());
+    })();
+  }, []);
 
   useEffect(() => {
-    if (user?.studentId) {
-      fetchNotifications();
+    if (students.length > 0) {
+      fetchAll();
     } else {
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.students]);
 
-  async function fetchNotifications() {
+  async function fetchAll() {
     try {
-      console.log("📥 Fetching notifications for studentId:", user?.studentId);
-      const res = await fetch(
-        `${BASE_URL}/api/notifications?studentId=${user?.studentId}`
-      );
-      console.log("📥 Response status:", res.status);
+      setLoading(true);
+      const all: any[] = [];
 
-      if (!res.ok) {
-        console.log("❌ Bad status:", res.status);
-        setNotifications([]);
-        return;
+      for (const s of students) {
+        try {
+          const res = await fetch(
+            `${BASE_URL}/api/notifications?studentId=${s.id}`
+          );
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            data.forEach((n) => {
+              n._studentName = s.name;
+              n._studentId = s.id;
+            });
+            all.push(...data);
+          }
+        } catch (e) {
+          console.log("Fetch error for student", s.id, e);
+        }
       }
 
-      const data = await res.json();
-      console.log("📥 Notifications data:", data);
+      all.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setNotifications(all);
 
-      const list = Array.isArray(data) ? data : [];
-      setNotifications(list);
+      // Play sound if new unread notification arrived
+      const unread = all.filter((n) => !n.readStatus).length;
+      if (
+        previousUnreadRef.current !== null &&
+        unread > previousUnreadRef.current
+      ) {
+        const newest = all.find((n) => !n.readStatus);
+        const t = newest?.type;
+        const type = t === "academic" ? "academic" : t === "fee" ? "fee" : "attendance";
+        playNotificationSound(type as any);
+      }
+      previousUnreadRef.current = unread;
     } catch (e) {
-      console.log("❌ Failed to fetch notifications:", e);
+      console.log("Failed to fetch notifications:", e);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function toggleSound() {
+    const next = !soundOn;
+    setSoundOn(next);
+    await setSoundEnabled(next);
+    if (next) playNotificationSound("attendance"); // small preview
   }
 
   async function markAsRead(id: string) {
@@ -77,7 +123,7 @@ export default function Notification() {
             await fetch(`${BASE_URL}/api/notifications?id=${id}`, {
               method: "DELETE",
             });
-            setNotifications((prev) => prev.filter((n: any) => n.id !== id));
+            setNotifications((prev) => prev.filter((n) => n.id !== id));
           } catch (e) {
             console.log("Failed to delete:", e);
           }
@@ -86,40 +132,34 @@ export default function Notification() {
     ]);
   }
 
-  function handleTap(notification: any) {
-    markAsRead(notification.id);
+  function handleTap(n: any) {
+    markAsRead(n.id);
     setNotifications((prev) =>
-      prev.map((n: any) =>
-        n.id === notification.id ? { ...n, readStatus: true } : n
-      )
+      prev.map((x) => (x.id === n.id ? { ...x, readStatus: true } : x))
     );
 
-    if (notification.type === "academic") {
-      router.push("/performance");
-    } else if (notification.type === "fee") {
-      // Add a fee screen if you have one; for now go to home
-      router.back();
+    const studentId = n._studentId;
+    if (n.type === "academic") {
+      router.push({ pathname: "/performance", params: { studentId } });
+    } else if (n.type === "fee") {
+      router.push({ pathname: "/fee", params: { studentId } });
     } else {
-      router.push("/attendance");
+      router.push({ pathname: "/attendance", params: { studentId } });
     }
   }
 
-  const unreadCount = notifications.filter(
-    (n: any) => !n.readStatus
-  ).length;
+  const unreadCount = notifications.filter((n) => !n.readStatus).length;
 
   function getTypeLabel(type: string) {
     if (type === "academic") return "Academic";
     if (type === "fee") return "Fee";
     return "Attendance";
   }
-
   function getBadgeStyle(type: string) {
     if (type === "academic") return styles.academicBadge;
     if (type === "fee") return styles.feeBadge;
     return styles.attendanceBadge;
   }
-
   function getBorderStyle(type: string) {
     if (type === "academic") return styles.academicCard;
     if (type === "fee") return styles.feeCard;
@@ -131,16 +171,26 @@ export default function Notification() {
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => router.back()}
-          style={styles.backIconBtn}
+          style={styles.iconBtn}
         >
           <Ionicons name="arrow-back" size={22} color="#2563eb" />
         </TouchableOpacity>
+
         <Text style={styles.title}>Notifications</Text>
+
         {unreadCount > 0 && (
           <View style={styles.countBadge}>
             <Text style={styles.countBadgeText}>{unreadCount}</Text>
           </View>
         )}
+
+        <TouchableOpacity onPress={toggleSound} style={styles.iconBtn}>
+          <Ionicons
+            name={soundOn ? "volume-high" : "volume-mute"}
+            size={22}
+            color={soundOn ? "#2563eb" : "#94a3b8"}
+          />
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -159,9 +209,8 @@ export default function Notification() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
-          {notifications.map((n: any) => {
+          {notifications.map((n) => {
             const isUnread = !n.readStatus;
-            const typeLabel = getTypeLabel(n.type);
             return (
               <TouchableOpacity
                 key={n.id}
@@ -175,9 +224,10 @@ export default function Notification() {
                 <View style={styles.cardTop}>
                   <View style={styles.cardTopLeft}>
                     <Text style={[styles.badge, getBadgeStyle(n.type)]}>
-                      {typeLabel}
+                      {getTypeLabel(n.type)}
                     </Text>
                     {isUnread && <View style={styles.unreadDot} />}
+                    <Text style={styles.studentTag}>{n._studentName}</Text>
                   </View>
                   <TouchableOpacity
                     onPress={() => deleteNotification(n.id)}
@@ -188,14 +238,6 @@ export default function Notification() {
                 </View>
 
                 <Text style={styles.message}>{n.message}</Text>
-
-                <Text style={styles.tapHint}>
-                  {n.type === "academic"
-                    ? "Tap to view Academic Performance"
-                    : n.type === "fee"
-                    ? "Tap to view Fee"
-                    : "Tap to view Attendance"}
-                </Text>
 
                 <Text style={styles.time}>
                   {new Date(n.createdAt).toLocaleString()}
@@ -220,7 +262,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  backIconBtn: { padding: 2 },
+  iconBtn: { padding: 4 },
   title: { fontSize: 20, fontWeight: "700", color: "#1e293b", flex: 1 },
   countBadge: {
     backgroundColor: "#ef4444",
@@ -265,8 +307,8 @@ const styles = StyleSheet.create({
   attendanceBadge: { backgroundColor: "#dbeafe", color: "#2563eb" },
   feeBadge: { backgroundColor: "#dcfce7", color: "#16a34a" },
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" },
+  studentTag: { fontSize: 11, color: "#64748b", marginLeft: 4 },
   deleteBtn: { padding: 4 },
   message: { fontSize: 13, color: "#475569", lineHeight: 20, marginBottom: 8 },
-  tapHint: { fontSize: 12, color: "#3b82f6", fontWeight: "600", marginBottom: 4 },
   time: { fontSize: 11, color: "#94a3b8" },
 });

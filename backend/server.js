@@ -82,7 +82,6 @@ app.post("/api/parent/login", async (req, res) => {
     console.log(`🔐 Login for ${phone} (normalized: ${normalized})`);
     const database = await connectDB();
 
-    // Try normalized first, then raw (in case old data isn't normalized)
     const query = { $or: [{ contact: normalized }, { contact: phone }] };
     const anyStudent = await database.collection("students").findOne(query);
     if (!anyStudent) {
@@ -107,7 +106,6 @@ app.post("/api/parent/login", async (req, res) => {
         .json({ success: false, error: "Invalid credentials" });
     }
 
-    // ✅ Return ALL students for this phone, not only at-risk
     const all = await database
       .collection("students")
       .find(query)
@@ -222,6 +220,45 @@ app.get("/api/attendance", async (req, res) => {
   }
 });
 
+// ✅ GET all tests for a student (mobile app)
+app.get("/api/tests", async (req, res) => {
+  const { studentId, month, testType } = req.query;
+  try {
+    const database = await connectDB();
+    const query = {};
+    if (studentId) query.studentId = String(studentId);
+    if (month) query.month = String(month);
+    if (testType) query.testType = String(testType);
+
+    const records = await database
+      .collection("tests")
+      .find(query)
+      .sort({ updatedAt: -1 })
+      .toArray();
+
+    res.json(
+      records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined }))
+    );
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ DELETE one test by its Mongo _id
+app.delete("/api/tests", async (req, res) => {
+  const { id } = req.query;
+  try {
+    if (!id) return res.status(400).json({ error: "id is required" });
+    const database = await connectDB();
+    const result = await database
+      .collection("tests")
+      .deleteOne({ _id: new ObjectId(id) });
+    res.json({ success: true, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/notifications", async (req, res) => {
   const { studentId } = req.query;
   try {
@@ -279,5 +316,4 @@ app.get("/test-students", async (req, res) => {
   }
 });
 
-// ✅ Vercel export — NO app.listen()
 module.exports = app;
