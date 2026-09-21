@@ -71,6 +71,7 @@ async function formatStudent(s) {
     admissionNo: s.admissionNo || "",
     rollNo: s.rollNo ?? null,
     contact: s.contact || "",
+    fee: s.fee ?? 0,
     attendancePercent: await getAttendancePercent(s.id),
   };
 }
@@ -314,6 +315,48 @@ app.delete("/api/exams", async (req, res) => {
     const database = await connectDB();
     const result = await database
       .collection("exams")
+      .deleteOne({ _id: new ObjectId(id) });
+    res.json({ success: true, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================================================
+// FEES
+// =====================================================
+
+// ✅ GET all fee payments for a student (mobile app)
+app.get("/api/fees", async (req, res) => {
+  const { studentId, month } = req.query;
+  try {
+    const database = await connectDB();
+    const query = {};
+    if (studentId) query.studentId = String(studentId);
+    if (month) query.month = String(month);
+
+    const records = await database
+      .collection("fees")
+      .find(query)
+      .sort({ paidAt: -1 })
+      .toArray();
+
+    res.json(
+      records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined }))
+    );
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ DELETE one fee payment by its Mongo _id
+app.delete("/api/fees", async (req, res) => {
+  const { id } = req.query;
+  try {
+    if (!id) return res.status(400).json({ error: "id is required" });
+    const database = await connectDB();
+    const result = await database
+      .collection("fees")
       .deleteOne({ _id: new ObjectId(id) });
     res.json({ success: true, deletedCount: result.deletedCount });
   } catch (err) {
