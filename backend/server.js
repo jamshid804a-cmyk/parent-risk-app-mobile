@@ -75,6 +75,10 @@ async function formatStudent(s) {
   };
 }
 
+// =====================================================
+// AUTH
+// =====================================================
+
 app.post("/api/parent/login", async (req, res) => {
   const { phone, password } = req.body;
   try {
@@ -149,7 +153,10 @@ app.get("/api/parent/:parentId/students", async (req, res) => {
         .json({ success: false, error: "Parent not found" });
 
     const query = {
-      $or: [{ contact: normalizePhone(parent.phone) }, { contact: parent.phone }],
+      $or: [
+        { contact: normalizePhone(parent.phone) },
+        { contact: parent.phone },
+      ],
     };
     const all = await database
       .collection("students")
@@ -187,6 +194,10 @@ app.get("/api/parent/student", async (req, res) => {
   }
 });
 
+// =====================================================
+// STUDENTS
+// =====================================================
+
 app.get("/api/students", async (req, res) => {
   try {
     const database = await connectDB();
@@ -204,6 +215,10 @@ app.get("/api/students", async (req, res) => {
   }
 });
 
+// =====================================================
+// ATTENDANCE
+// =====================================================
+
 app.get("/api/attendance", async (req, res) => {
   const { studentId } = req.query;
   try {
@@ -219,6 +234,10 @@ app.get("/api/attendance", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// =====================================================
+// TESTS
+// =====================================================
 
 // ✅ GET all tests for a student (mobile app)
 app.get("/api/tests", async (req, res) => {
@@ -258,6 +277,53 @@ app.delete("/api/tests", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// =====================================================
+// EXAMS
+// =====================================================
+
+// ✅ GET all exams for a student (mobile app)
+app.get("/api/exams", async (req, res) => {
+  const { studentId, month, examType } = req.query;
+  try {
+    const database = await connectDB();
+    const query = {};
+    if (studentId) query.studentId = String(studentId);
+    if (month) query.month = String(month);
+    if (examType) query.examType = String(examType);
+
+    const records = await database
+      .collection("exams")
+      .find(query)
+      .sort({ updatedAt: -1 })
+      .toArray();
+
+    res.json(
+      records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined }))
+    );
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ DELETE one exam by its Mongo _id
+app.delete("/api/exams", async (req, res) => {
+  const { id } = req.query;
+  try {
+    if (!id) return res.status(400).json({ error: "id is required" });
+    const database = await connectDB();
+    const result = await database
+      .collection("exams")
+      .deleteOne({ _id: new ObjectId(id) });
+    res.json({ success: true, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================================================
+// NOTIFICATIONS
+// =====================================================
 
 app.get("/api/notifications", async (req, res) => {
   const { studentId } = req.query;
@@ -301,6 +367,10 @@ app.delete("/api/notifications", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// =====================================================
+// DEBUG
+// =====================================================
 
 app.get("/test-students", async (req, res) => {
   try {
