@@ -1,11 +1,12 @@
-﻿import { router } from "expo-router";
+﻿import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router";
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useRef,
+    useState,
 } from "react";
 import { AppState } from "react-native";
 import { SmartToast, ToastData } from "../components/SmartToast";
@@ -14,6 +15,7 @@ import { useAuth } from "./AuthContext";
 
 const BASE_URL = "https://parentriskapp-backend.vercel.app";
 const POLL_MS = 10000;
+const SEEN_KEY = "toast_seen_ids_v1";
 
 type ToastContextType = {
   showToast: (t: Omit<ToastData, "id">) => void;
@@ -61,6 +63,29 @@ function isUnread(n: any): boolean {
   return n?.readStatus === false || n?.readStatus === 0;
 }
 
+// ✅ Persist seen IDs to AsyncStorage so cold start doesn't re-toast
+async function loadSeen(): Promise<Set<string>> {
+  try {
+    const raw = await AsyncStorage.getItem(SEEN_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.map(String));
+  } catch {
+    return new Set();
+  }
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleSaveSeen(set: Set<string>) {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    // Keep only the newest 500 IDs to avoid unbounded growth
+    const arr = Array.from(set).slice(-500);
+    AsyncStorage.setItem(SEEN_KEY, JSON.stringify(arr)).catch(() => {});
+  }, 400);
+}
+
 export const ToastProvider = ({ children }: any) => {
   const { user } = useAuth();
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -68,6 +93,14 @@ export const ToastProvider = ({ children }: any) => {
   const initializedRef = useRef(false);
   const busyRef = useRef(false);
   const appState = useRef(AppState.currentState);
+
+  // Load persisted seen IDs once on mount
+  useEffect(() => {
+    (async () => {
+      const s = await loadSeen();
+      seenIdsRef.current = s;
+    })();
+  }, []);
 
   const showToast = useCallback((t: Omit<ToastData, "id">) => {
     const id = String(Date.now()) + Math.random().toString(36).slice(2, 8);
@@ -78,12 +111,15 @@ export const ToastProvider = ({ children }: any) => {
     if (busyRef.current) return;
     const students = user?.students || [];
     if (students.length === 0) return;
+
     busyRef.current = true;
     try {
       const all: any[] = [];
       for (const s of students) {
         try {
-          const res = await fetch(`${BASE_URL}/api/notifications?studentId=${s.id}`);
+          const res = await fetch(
+            `${BASE_URL}/api/notifications?studentId=${s.id}`
+          );
           if (!res.ok) continue;
           const data = await res.json();
           if (Array.isArray(data)) {
@@ -95,18 +131,44 @@ export const ToastProvider = ({ children }: any) => {
           }
         } catch {}
       }
-      all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      all.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      // First poll ever → remember everything, don't toast
       if (!initializedRef.current) {
         all.forEach((n) => seenIdsRef.current.add(String(n.id)));
         initializedRef.current = true;
+        scheduleSaveSeen(seenIdsRef.current);
         return;
       }
-      const fresh = all.filter((n) => isUnread(n) && !seenIdsRef.current.has(String(n.id)));
+
+      // Find new unread notifications NOT seen before
+      const fresh = all.filter(
+        (n) => isUnread(n) && !seenIdsRef.current.has(String(n.id))
+      );
+
+      // ✅ If we just logged in or a new student got added, all these will
+      // be "fresh" — but their createdAt will be old. Ignore anything older
+      // than 5 minutes to avoid re-toasting history.
+      const FIVE_MIN = 5 * 60 * 1000;
+      const now = Date.now();
+      const trulyNew = fresh.filter((n) => {
+        const t = new Date(n.createdAt).getTime();
+        return !isNaN(t) && now - t < FIVE_MIN;
+      });
+
+      // Mark EVERY fresh item as seen (even old ones) so they don't come back
       fresh.forEach((n) => seenIdsRef.current.add(String(n.id)));
-      if (fresh.length > 0) {
-        const n = fresh[0];
+      scheduleSaveSeen(seenIdsRef.current);
+
+      if (trulyNew.length > 0) {
+        const n = trulyNew[0];
         const kind = getKind(n);
         const toastType = kindToToastType(kind);
+
         showToast({
           title: n._studentName || kindLabel(kind),
           message: kindLabel(kind) + ": " + (n.message || ""),
@@ -124,6 +186,7 @@ export const ToastProvider = ({ children }: any) => {
             else router.push("/notification");
           },
         });
+
         try {
           await playNotificationSound(toastType);
         } catch {}
@@ -135,7 +198,7 @@ export const ToastProvider = ({ children }: any) => {
 
   useEffect(() => {
     if (!user) {
-      seenIdsRef.current.clear();
+      // On logout: keep the persisted seen IDs so we don't re-toast on next login
       initializedRef.current = false;
       return;
     }

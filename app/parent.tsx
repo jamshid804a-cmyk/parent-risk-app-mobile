@@ -71,7 +71,6 @@ function InfoTile({ icon, label, value }: { icon: string; label: string; value: 
   );
 }
 
-// ✅ Animated bell badge
 function BellBadge({ count, headerBg }: { count: number; headerBg: string }) {
   const scale = useRef(new Animated.Value(count > 0 ? 1 : 0)).current;
 
@@ -109,7 +108,6 @@ function BellBadge({ count, headerBg }: { count: number; headerBg: string }) {
   );
 }
 
-// ✅ Bell that wiggles when new items arrive
 function AnimatedBell({ trigger }: { trigger: number }) {
   const wiggle = useRef(new Animated.Value(0)).current;
 
@@ -135,7 +133,6 @@ function AnimatedBell({ trigger }: { trigger: number }) {
   );
 }
 
-// ✅ Number that pulses when it changes
 function AnimatedNumber({ value }: { value: number }) {
   const anim = useRef(new Animated.Value(1)).current;
 
@@ -173,7 +170,6 @@ export default function Parent() {
   const studentList: any[] = user?.students || [];
   const totalStudents = studentList.length;
 
-  // ✅ Fetch unread counts for all children
   const fetchUnread = useCallback(async () => {
     if (studentList.length === 0) {
       setUnreadCount(0);
@@ -187,7 +183,6 @@ export default function Parent() {
             if (!res.ok) return 0;
             const data = await res.json();
             const arr = Array.isArray(data) ? data : [];
-            // ✅ Correct field: readStatus (false = unread)
             return arr.filter((n: any) => n.readStatus === false || n.readStatus === 0).length;
           } catch {
             return 0;
@@ -234,14 +229,12 @@ export default function Parent() {
     }
   };
 
-  // Refresh on focus
   useFocusEffect(
     useCallback(() => {
       doRefresh();
     }, [doRefresh])
   );
 
-  // Refresh when app returns to foreground
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
       if (appState.current.match(/inactive|background/) && next === "active") {
@@ -252,14 +245,12 @@ export default function Parent() {
     return () => sub.remove();
   }, [doRefresh]);
 
-  // ✅ Refresh every 20 seconds (was 30s) for snappier badge updates
   useEffect(() => {
     if (!user) return;
     const t = setInterval(doRefresh, 20000);
     return () => clearInterval(t);
   }, [user, doRefresh]);
 
-  // Fetch unread when student list changes
   useEffect(() => {
     fetchUnread();
   }, [user?.students, fetchUnread]);
@@ -324,6 +315,17 @@ export default function Parent() {
             </View>
 
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              {/* ✅ NEW: Settings gear button */}
+              <TouchableOpacity
+                onPress={() => router.push("/settings")}
+                style={{
+                  width: 42, height: 42, borderRadius: 21, alignItems: "center",
+                  justifyContent: "center", backgroundColor: "rgba(255,255,255,0.14)",
+                }}
+              >
+                <Ionicons name="settings-outline" size={20} color="#fff" />
+              </TouchableOpacity>
+
               <TouchableOpacity
                 onPress={handleManualRefresh}
                 disabled={refreshing || autoRefreshing}
@@ -567,7 +569,6 @@ export default function Parent() {
             )}
           </View>
 
-          {/* Notifications card */}
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => router.push("/notification")}

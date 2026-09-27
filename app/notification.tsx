@@ -1,6 +1,6 @@
 ﻿import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,8 +12,11 @@ import {
   View,
 } from "react-native";
 import { useAuth } from "../src/context/AuthContext";
+import { playNotificationSound } from "../src/utils/sound";
+import type { NotifType } from "../src/utils/soundSettings";
 
 const BASE_URL = "https://parentriskapp-backend.vercel.app";
+const POLL_INTERVAL_MS = 20000; // check for new notifications every 20s
 
 type Kind = "attendance" | "test" | "exam" | "fee" | "info";
 
@@ -31,6 +34,14 @@ function getKind(n: any): Kind {
   return "info";
 }
 
+// Maps this screen's Kind values to the sound-settings NotifType keys
+function toSoundType(kind: Kind): NotifType {
+  if (kind === "exam") return "examination";
+  if (kind === "test") return "test";
+  if (kind === "fee") return "fee";
+  return "attendance";
+}
+
 const KIND_LABEL: Record<Kind, string> = {
   attendance: "Attendance",
   test: "Test Section",
@@ -45,18 +56,34 @@ export default function Notification() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ✅ Multi-select mode
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // ✅ Tracks which notification IDs we've already seen, so we only
+  // play sound for genuinely NEW ones (not on every fetch/reopen)
+  const seenIdsRef = useRef<Set<string> | null>(null);
+
   useEffect(() => {
     if (students.length > 0) fetchAll();
     else setLoading(false);
+
+    const interval = setInterval(() => {
+      if (students.length > 0) fetchAll(true);
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(interval);
   }, [user?.students]);
 
-  async function fetchAll() {
+  async function fetchAll(isPoll: boolean = false) {
     try {
-      setLoading(true);
+      if (!isPoll) setLoading(true);
       const all: any[] = [];
       for (const s of students) {
         try {
-          const res = await fetch(`${BASE_URL}/api/notifications?studentId=${s.id}`);
+          const res = await fetch(
+            `${BASE_URL}/api/notifications?studentId=${s.id}`
+          );
           if (!res.ok) continue;
           const data = await res.json();
           if (Array.isArray(data)) {
@@ -70,12 +97,29 @@ export default function Notification() {
           console.log("Fetch error for student", s.id, e);
         }
       }
-      all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      all.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      // ✅ Detect new notifications since last check and play their assigned sound
+      const currentIds = new Set(all.map((n) => String(n.id)));
+      if (seenIdsRef.current !== null) {
+        const newOnes = all.filter(
+          (n) => !seenIdsRef.current!.has(String(n.id))
+        );
+        for (const n of newOnes) {
+          const kind = getKind(n);
+          await playNotificationSound(toSoundType(kind));
+        }
+      }
+      seenIdsRef.current = currentIds;
+
       setNotifications(all);
     } catch (e) {
       console.log("Failed to fetch notifications:", e);
     } finally {
-      setLoading(false);
+      if (!isPoll) setLoading(false);
     }
   }
 
@@ -91,6 +135,7 @@ export default function Notification() {
     }
   }
 
+  // Delete one (existing behavior)
   async function deleteNotification(id: string) {
     Alert.alert("Delete Notification", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
@@ -99,8 +144,15 @@ export default function Notification() {
         style: "destructive",
         onPress: async () => {
           try {
-            await fetch(`${BASE_URL}/api/notifications?id=${id}`, { method: "DELETE" });
+            await fetch(`${BASE_URL}/api/notifications?id=${id}`, {
+              method: "DELETE",
+            });
             setNotifications((prev) => prev.filter((n) => n.id !== id));
+            setSelectedIds((prev) => {
+              const copy = new Set(prev);
+              copy.delete(id);
+              return copy;
+            });
           } catch (e) {
             console.log("Failed to delete:", e);
           }
@@ -109,7 +161,67 @@ export default function Notification() {
     ]);
   }
 
+  // ✅ Delete everything selected
+  async function deleteSelected() {
+    if (selectedIds.size === 0) {
+      Alert.alert("Nothing selected", "Select at least one notification first.");
+      return;
+    }
+    Alert.alert(
+      "Delete Selected",
+      `Delete ${selectedIds.size} notification${selectedIds.size === 1 ? "" : "s"}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            const ids = Array.from(selectedIds);
+            for (const id of ids) {
+              try {
+                await fetch(`${BASE_URL}/api/notifications?id=${id}`, {
+                  method: "DELETE",
+                });
+              } catch (e) {
+                console.log("Delete failed:", id, e);
+              }
+            }
+            setNotifications((prev) => prev.filter((n) => !selectedIds.has(n.id)));
+            setSelectedIds(new Set());
+            setSelectMode(false);
+          },
+        },
+      ]
+    );
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const copy = new Set(prev);
+      if (copy.has(id)) copy.delete(id);
+      else copy.add(id);
+      return copy;
+    });
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(notifications.map((n) => String(n.id))));
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
   function handleTap(n: any) {
+    if (selectMode) {
+      toggleSelect(String(n.id));
+      return;
+    }
     markAsRead(n.id);
     setNotifications((prev) =>
       prev.map((x) => (x.id === n.id ? { ...x, readStatus: true } : x))
@@ -148,15 +260,54 @@ export default function Notification() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Ionicons name="arrow-back" size={22} color="#2563eb" />
-        </TouchableOpacity>
-        <Text style={styles.title}>Notifications</Text>
-        {unreadCount > 0 && (
-          <View style={styles.countBadge}>
-            <Text style={styles.countBadgeText}>{unreadCount}</Text>
-          </View>
+        {selectMode ? (
+          <>
+            <TouchableOpacity onPress={exitSelectMode} style={styles.iconBtn}>
+              <Ionicons name="close" size={22} color="#2563eb" />
+            </TouchableOpacity>
+            <Text style={styles.title}>
+              {selectedIds.size} selected
+            </Text>
+            <TouchableOpacity
+              onPress={
+                selectedIds.size === notifications.length ? clearSelection : selectAll
+              }
+              style={styles.textBtn}
+            >
+              <Text style={styles.textBtnLabel}>
+                {selectedIds.size === notifications.length ? "Unselect All" : "Select All"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={deleteSelected}
+              style={styles.deleteSelectedBtn}
+            >
+              <Ionicons name="trash" size={18} color="#fff" />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+              <Ionicons name="arrow-back" size={22} color="#2563eb" />
+            </TouchableOpacity>
+            <Text style={styles.title}>Notifications</Text>
+            {unreadCount > 0 && (
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>{unreadCount}</Text>
+              </View>
+            )}
+            {notifications.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setSelectMode(true)}
+                style={styles.selectToggleBtn}
+              >
+                <Ionicons name="checkmark-done" size={18} color="#2563eb" />
+                <Text style={styles.selectToggleText}>Select</Text>
+              </TouchableOpacity>
+            )}
+          </>
         )}
       </View>
 
@@ -175,27 +326,55 @@ export default function Notification() {
           {notifications.map((n) => {
             const isUnread = n.readStatus === false || n.readStatus === 0;
             const kind = getKind(n);
+            const isSelected = selectedIds.has(String(n.id));
             return (
               <TouchableOpacity
                 key={n.id}
                 onPress={() => handleTap(n)}
-                style={[styles.card, isUnread && styles.unreadCard, getBorderStyle(kind)]}
+                style={[
+                  styles.card,
+                  isUnread && !selectMode && styles.unreadCard,
+                  getBorderStyle(kind),
+                  selectMode && isSelected && styles.selectedCard,
+                ]}
               >
                 <View style={styles.cardTop}>
                   <View style={styles.cardTopLeft}>
+                    {/* ✅ Checkbox in select mode */}
+                    {selectMode && (
+                      <View
+                        style={[
+                          styles.checkbox,
+                          isSelected && styles.checkboxChecked,
+                        ]}
+                      >
+                        {isSelected && (
+                          <Ionicons name="checkmark" size={14} color="#fff" />
+                        )}
+                      </View>
+                    )}
                     <Text style={[styles.badge, getBadgeStyle(kind)]}>
                       {KIND_LABEL[kind]}
                     </Text>
-                    {isUnread && <View style={styles.unreadDot} />}
+                    {isUnread && !selectMode && <View style={styles.unreadDot} />}
                     <Text style={styles.studentTag}>{n._studentName}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => deleteNotification(n.id)} style={styles.deleteBtn}>
-                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                  </TouchableOpacity>
+                  {!selectMode && (
+                    <TouchableOpacity
+                      onPress={() => deleteNotification(n.id)}
+                      style={styles.deleteBtn}
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                    </TouchableOpacity>
+                  )}
                 </View>
+
                 <Text style={styles.message}>{n.message}</Text>
+
                 <Text style={styles.hint}>
-                  {kind === "test"
+                  {selectMode
+                    ? ""
+                    : kind === "test"
                     ? "Tap to view Test Section →"
                     : kind === "exam"
                     ? "Tap to view Examination →"
@@ -205,7 +384,10 @@ export default function Notification() {
                     ? "Tap to view Attendance →"
                     : ""}
                 </Text>
-                <Text style={styles.time}>{new Date(n.createdAt).toLocaleString()}</Text>
+
+                <Text style={styles.time}>
+                  {new Date(n.createdAt).toLocaleString()}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -237,6 +419,54 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   countBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+
+  // ✅ Select-mode toggle button
+  selectToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#eef2ff",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  selectToggleText: { color: "#2563eb", fontWeight: "800", fontSize: 12 },
+
+  // ✅ In select mode
+  textBtn: { paddingHorizontal: 8, paddingVertical: 6 },
+  textBtnLabel: { color: "#2563eb", fontWeight: "800", fontSize: 13 },
+  deleteSelectedBtn: {
+    backgroundColor: "#ef4444",
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // ✅ Checkbox
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#cbd5e1",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    marginRight: 6,
+  },
+  checkboxChecked: {
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
+  },
+
+  selectedCard: {
+    borderWidth: 2,
+    borderColor: "#2563eb",
+    backgroundColor: "#eff6ff",
+  },
+
   center: { flex: 1, justifyContent: "center", alignItems: "center", gap: 10 },
   loadingText: { color: "#64748b", marginTop: 8 },
   emptyText: { fontSize: 15, color: "#94a3b8" },

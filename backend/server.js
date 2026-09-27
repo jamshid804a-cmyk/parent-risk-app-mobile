@@ -385,6 +385,32 @@ app.delete("/api/fees", async (req, res) => {
 });
 
 // =====================================================
+// PUSH TOKEN
+// =====================================================
+
+app.post("/api/parent/push-token", async (req, res) => {
+  const { parentId, pushToken } = req.body;
+  try {
+    if (!parentId || !pushToken) {
+      return res
+        .status(400)
+        .json({ success: false, error: "parentId and pushToken required" });
+    }
+    const database = await connectDB();
+    await database
+      .collection("parents")
+      .updateOne(
+        { _id: new ObjectId(parentId) },
+        { $set: { pushToken } }
+      );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Push token save error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// =====================================================
 // NOTIFICATIONS
 // =====================================================
 
