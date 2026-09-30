@@ -1,5 +1,4 @@
 import { AudioPlayer, createAudioPlayer, setAudioModeAsync } from "expo-audio";
-import { Alert } from "react-native";
 import {
   getSoundFor,
   getSoundMap,
@@ -21,8 +20,18 @@ const SOURCE: Record<SoundKey, any> = {
   notification3: require("../../assets/notification3.mp3"),
 };
 
-const players: Partial<Record<SoundKey, AudioPlayer>> = {};
+let currentPlayer: AudioPlayer | null = null;
+let currentKey: SoundKey | null = null;
 let audioModeSet = false;
+
+async function destroyCurrentPlayer() {
+  if (currentPlayer) {
+    try { currentPlayer.pause(); } catch {}
+    try { currentPlayer.remove?.(); } catch {}
+    currentPlayer = null;
+    currentKey = null;
+  }
+}
 
 export async function playSound(key: SoundKey): Promise<void> {
   try {
@@ -36,20 +45,15 @@ export async function playSound(key: SoundKey): Promise<void> {
       audioModeSet = true;
     }
 
-    if (!players[key]) {
-      players[key] = createAudioPlayer(SOURCE[key]);
-    }
+    await destroyCurrentPlayer();
+    await new Promise((r) => setTimeout(r, 60));
 
-    const player = players[key]!;
-
-    try {
-      player.seekTo(0);
-    } catch {}
-
-    player.play();
+    currentPlayer = createAudioPlayer(SOURCE[key]);
+    currentKey = key;
+    await new Promise((r) => setTimeout(r, 30));
+    currentPlayer.play();
   } catch (e: any) {
     console.log("playSound error:", e);
-    Alert.alert("Sound Error", String(e?.message || e));
   }
 }
 

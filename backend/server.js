@@ -35,6 +35,14 @@ const toInt = (v) => {
   return isNaN(n) ? null : n;
 };
 
+// ✅ Prevent Vercel CDN caching — call at the top of every GET route
+function noCache(res) {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.set("Surrogate-Control", "no-store");
+}
+
 // ✅ Normalize any phone format to 03XXXXXXXXX
 function normalizePhone(input) {
   if (!input) return "";
@@ -135,6 +143,7 @@ app.post("/api/parent/login", async (req, res) => {
 });
 
 app.get("/api/parent/:parentId/students", async (req, res) => {
+  noCache(res);
   const { parentId } = req.params;
   try {
     const database = await connectDB();
@@ -183,6 +192,7 @@ app.get("/api/parent/:parentId/students", async (req, res) => {
 });
 
 app.get("/api/parent/student", async (req, res) => {
+  noCache(res);
   const { studentId } = req.query;
   try {
     const database = await connectDB();
@@ -200,6 +210,7 @@ app.get("/api/parent/student", async (req, res) => {
 // =====================================================
 
 app.get("/api/students", async (req, res) => {
+  noCache(res);
   try {
     const database = await connectDB();
     const students = await database
@@ -221,6 +232,7 @@ app.get("/api/students", async (req, res) => {
 // =====================================================
 
 app.get("/api/attendance", async (req, res) => {
+  noCache(res);
   const { studentId } = req.query;
   try {
     const database = await connectDB();
@@ -236,8 +248,6 @@ app.get("/api/attendance", async (req, res) => {
   }
 });
 
-// ✅ DELETE all attendance records for a student in one month
-// Example: /api/attendance/month?studentId=1&month=01/2026
 app.delete("/api/attendance/month", async (req, res) => {
   const { studentId, month } = req.query;
   try {
@@ -260,8 +270,8 @@ app.delete("/api/attendance/month", async (req, res) => {
 // TESTS
 // =====================================================
 
-// ✅ GET all tests for a student (mobile app)
 app.get("/api/tests", async (req, res) => {
+  noCache(res);
   const { studentId, month, testType } = req.query;
   try {
     const database = await connectDB();
@@ -284,7 +294,6 @@ app.get("/api/tests", async (req, res) => {
   }
 });
 
-// ✅ DELETE one test by its Mongo _id
 app.delete("/api/tests", async (req, res) => {
   const { id } = req.query;
   try {
@@ -303,8 +312,8 @@ app.delete("/api/tests", async (req, res) => {
 // EXAMS
 // =====================================================
 
-// ✅ GET all exams for a student (mobile app)
 app.get("/api/exams", async (req, res) => {
+  noCache(res);
   const { studentId, month, examType } = req.query;
   try {
     const database = await connectDB();
@@ -327,7 +336,6 @@ app.get("/api/exams", async (req, res) => {
   }
 });
 
-// ✅ DELETE one exam by its Mongo _id
 app.delete("/api/exams", async (req, res) => {
   const { id } = req.query;
   try {
@@ -346,8 +354,8 @@ app.delete("/api/exams", async (req, res) => {
 // FEES
 // =====================================================
 
-// ✅ GET all fee payments for a student (mobile app)
 app.get("/api/fees", async (req, res) => {
+  noCache(res);
   const { studentId, month } = req.query;
   try {
     const database = await connectDB();
@@ -369,7 +377,6 @@ app.get("/api/fees", async (req, res) => {
   }
 });
 
-// ✅ DELETE one fee payment by its Mongo _id
 app.delete("/api/fees", async (req, res) => {
   const { id } = req.query;
   try {
@@ -415,14 +422,19 @@ app.post("/api/parent/push-token", async (req, res) => {
 // =====================================================
 
 app.get("/api/notifications", async (req, res) => {
+  noCache(res);
   const { studentId } = req.query;
   try {
     const database = await connectDB();
+    const query = {};
+    if (studentId) query.studentId = String(studentId);
+
     const records = await database
       .collection("notifications")
-      .find({ studentId: String(studentId) })
+      .find(query)
       .sort({ createdAt: -1 })
       .toArray();
+
     res.json(
       records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined }))
     );
@@ -462,6 +474,7 @@ app.delete("/api/notifications", async (req, res) => {
 // =====================================================
 
 app.get("/test-students", async (req, res) => {
+  noCache(res);
   try {
     const database = await connectDB();
     const students = await database

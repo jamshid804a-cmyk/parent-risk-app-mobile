@@ -1,14 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef } from "react";
 import {
-    Animated,
-    Dimensions,
-    Platform,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Animated,
+  Dimensions,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 const HEADER_TOP =
@@ -20,7 +20,7 @@ export interface ToastData {
   id: string;
   title: string;
   message: string;
-  type: "attendance" | "academic" | "fee" | "info";
+  type: "attendance" | "test" | "examination" | "fee" | "info";
   onPress?: () => void;
 }
 
@@ -34,11 +34,17 @@ const TYPE_STYLE: Record<
     icon: "calendar",
     label: "Attendance",
   },
-  academic: {
+  test: {
+    color: "#0891b2",
+    bg: "#cffafe",
+    icon: "flask",
+    label: "Test",
+  },
+  examination: {
     color: "#7c3aed",
     bg: "#ede9fe",
     icon: "document-text",
-    label: "Academic",
+    label: "Examination",
   },
   fee: {
     color: "#059669",
@@ -68,11 +74,9 @@ export function SmartToast({
   useEffect(() => {
     if (!toast) return;
 
-    // ✅ Reset position so the next toast slides in from the top again
     translateY.setValue(-200);
     opacity.setValue(0);
 
-    // Slide in
     Animated.parallel([
       Animated.timing(translateY, {
         toValue: 0,
@@ -86,7 +90,6 @@ export function SmartToast({
       }),
     ]).start();
 
-    // Auto-hide in 4.5s
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       hide();

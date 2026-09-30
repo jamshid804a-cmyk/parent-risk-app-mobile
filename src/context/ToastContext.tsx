@@ -1,12 +1,12 @@
 ﻿import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import {
-    createContext,
-    useCallback,
-    useContext,
-    useEffect,
-    useRef,
-    useState,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
 import { AppState } from "react-native";
 import { SmartToast, ToastData } from "../components/SmartToast";
@@ -27,25 +27,28 @@ const ToastContext = createContext<ToastContextType>({
 
 export const useToast = () => useContext(ToastContext);
 
-type Kind = "attendance" | "test" | "exam" | "fee" | "info";
+type Kind = "attendance" | "test" | "examination" | "fee" | "info";
 
 function getKind(n: any): Kind {
   const t = String(n?.type || "").toLowerCase();
   const msg = String(n?.message || "").toLowerCase();
+
   if (t === "fee") return "fee";
   if (t === "attendance") return "attendance";
   if (t === "test") return "test";
-  if (t === "exam") return "exam";
+  if (t === "examination" || t === "exam") return "examination";
+
+  // Legacy "academic" fallback — inspect the message to guess
   if (t === "academic") {
-    if (msg.includes("exam")) return "exam";
+    if (msg.includes("exam")) return "examination";
     return "test";
   }
   return "info";
 }
 
 function kindToToastType(k: Kind): ToastData["type"] {
-  if (k === "test") return "academic";
-  if (k === "exam") return "academic";
+  if (k === "test") return "test";
+  if (k === "examination") return "examination";
   if (k === "fee") return "fee";
   if (k === "attendance") return "attendance";
   return "info";
@@ -53,7 +56,7 @@ function kindToToastType(k: Kind): ToastData["type"] {
 
 function kindLabel(k: Kind): string {
   if (k === "test") return "Test Section";
-  if (k === "exam") return "Examination";
+  if (k === "examination") return "Examination";
   if (k === "fee") return "Fee";
   if (k === "attendance") return "Attendance";
   return "Notification";
@@ -63,7 +66,6 @@ function isUnread(n: any): boolean {
   return n?.readStatus === false || n?.readStatus === 0;
 }
 
-// ✅ Persist seen IDs to AsyncStorage so cold start doesn't re-toast
 async function loadSeen(): Promise<Set<string>> {
   try {
     const raw = await AsyncStorage.getItem(SEEN_KEY);
@@ -80,7 +82,6 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleSaveSeen(set: Set<string>) {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    // Keep only the newest 500 IDs to avoid unbounded growth
     const arr = Array.from(set).slice(-500);
     AsyncStorage.setItem(SEEN_KEY, JSON.stringify(arr)).catch(() => {});
   }, 400);
@@ -94,7 +95,6 @@ export const ToastProvider = ({ children }: any) => {
   const busyRef = useRef(false);
   const appState = useRef(AppState.currentState);
 
-  // Load persisted seen IDs once on mount
   useEffect(() => {
     (async () => {
       const s = await loadSeen();
@@ -137,7 +137,6 @@ export const ToastProvider = ({ children }: any) => {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
 
-      // First poll ever → remember everything, don't toast
       if (!initializedRef.current) {
         all.forEach((n) => seenIdsRef.current.add(String(n.id)));
         initializedRef.current = true;
@@ -145,14 +144,10 @@ export const ToastProvider = ({ children }: any) => {
         return;
       }
 
-      // Find new unread notifications NOT seen before
       const fresh = all.filter(
         (n) => isUnread(n) && !seenIdsRef.current.has(String(n.id))
       );
 
-      // ✅ If we just logged in or a new student got added, all these will
-      // be "fresh" — but their createdAt will be old. Ignore anything older
-      // than 5 minutes to avoid re-toasting history.
       const FIVE_MIN = 5 * 60 * 1000;
       const now = Date.now();
       const trulyNew = fresh.filter((n) => {
@@ -160,7 +155,6 @@ export const ToastProvider = ({ children }: any) => {
         return !isNaN(t) && now - t < FIVE_MIN;
       });
 
-      // Mark EVERY fresh item as seen (even old ones) so they don't come back
       fresh.forEach((n) => seenIdsRef.current.add(String(n.id)));
       scheduleSaveSeen(seenIdsRef.current);
 
@@ -179,7 +173,7 @@ export const ToastProvider = ({ children }: any) => {
               router.push({ pathname: "/attendance", params: { studentId: sid } });
             else if (kind === "test")
               router.push({ pathname: "/testing", params: { studentId: sid } });
-            else if (kind === "exam")
+            else if (kind === "examination")
               router.push({ pathname: "/examination", params: { studentId: sid } });
             else if (kind === "fee")
               router.push({ pathname: "/fee", params: { studentId: sid } });
@@ -198,7 +192,6 @@ export const ToastProvider = ({ children }: any) => {
 
   useEffect(() => {
     if (!user) {
-      // On logout: keep the persisted seen IDs so we don't re-toast on next login
       initializedRef.current = false;
       return;
     }

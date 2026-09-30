@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 type Student = {
@@ -39,6 +40,58 @@ const AuthContext = createContext<AuthContextType>({
 
 const BASE_URL = "https://parentriskapp-backend.vercel.app";
 
+// Detect if running inside Expo Go — expo-notifications is unsupported there.
+function isExpoGo(): boolean {
+  return (
+    Constants.appOwnership === "expo" ||
+    Constants.executionEnvironment === "storeClient"
+  );
+}
+
+// Lazy-load expo-notifications so it never crashes Expo Go at boot.
+let NotificationsModule: any = null;
+function loadNotifications(): any {
+  if (NotificationsModule) return NotificationsModule;
+  if (isExpoGo()) return null;
+  try {
+    NotificationsModule = require("expo-notifications");
+    return NotificationsModule;
+  } catch (e) {
+    console.log("[push] module not available:", e);
+    return null;
+  }
+}
+
+async function registerPushToken(parentId: string) {
+  const N = loadNotifications();
+  if (!N) {
+    console.log("[push] skipping — Expo Go or module missing");
+    return;
+  }
+
+  try {
+    const { status: existingStatus } = await N.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== "granted") {
+      const { status } = await N.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== "granted") return;
+
+    const projectId = Constants?.expoConfig?.extra?.eas?.projectId;
+    const tokenData = await N.getExpoPushTokenAsync({ projectId });
+    const pushToken = tokenData.data;
+
+    await fetch(`${BASE_URL}/api/parent/push-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parentId, pushToken }),
+    });
+  } catch (e) {
+    console.log("Push token registration failed:", e);
+  }
+}
+
 export const AuthProvider = ({ children }: any) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,6 +110,7 @@ export const AuthProvider = ({ children }: any) => {
         setUser(parsed);
         userRef.current = parsed;
         await refreshFromServer(parsed.phone, parsed.password);
+        await registerPushToken(parsed.parentId);
       }
     } catch (error) {
       console.log("Failed to load user:", error);
@@ -111,6 +165,7 @@ export const AuthProvider = ({ children }: any) => {
       setUser(newUser);
       userRef.current = newUser;
       await AsyncStorage.setItem("user", JSON.stringify(newUser));
+      await registerPushToken(newUser.parentId);
       return { success: true };
     } catch (error) {
       console.log("Login error:", error);
@@ -118,7 +173,6 @@ export const AuthProvider = ({ children }: any) => {
     }
   };
 
-  // ✅ Uses ref, so it always has the latest user
   const refreshUser = async () => {
     const current = userRef.current;
     if (!current) return;
