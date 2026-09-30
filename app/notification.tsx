@@ -1,142 +1,136 @@
-﻿import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+﻿import { Ionicons } from "@expo/vector-icons"
+import { router, useFocusEffect } from "expo-router"
+import { useCallback, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
-  SafeAreaView,
+  Platform,
+  RefreshControl,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-} from "react-native";
-import { useAuth } from "../src/context/AuthContext";
-import { playNotificationSound } from "../src/utils/sound";
-import type { NotifType } from "../src/utils/soundSettings";
+} from "react-native"
+import { useAuth } from "../src/context/AuthContext"
 
-const BASE_URL = "https://parentriskapp-backend.vercel.app";
-const POLL_INTERVAL_MS = 20000; // check for new notifications every 20s
+const BASE_URL = "https://parentriskapp-backend.vercel.app"
+const HEADER_TOP =
+  Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 10 : 54
 
-type Kind = "attendance" | "test" | "exam" | "fee" | "info";
+// ─── Color + label map ───
+const KIND_STYLE = {
+  attendance: { color: "#2563eb", bg: "#dbeafe", label: "Attendance" },
+  test: { color: "#0891b2", bg: "#cffafe", label: "Test" },
+  examination: { color: "#7c3aed", bg: "#ede9fe", label: "Examination" },
+  fee: { color: "#059669", bg: "#d1fae5", label: "Fee" },
+  info: { color: "#4f46e5", bg: "#e0e7ff", label: "Notification" },
+} as const
+
+type Kind = keyof typeof KIND_STYLE
 
 function getKind(n: any): Kind {
-  const t = String(n?.type || "").toLowerCase();
-  const msg = String(n?.message || "").toLowerCase();
-  if (t === "fee") return "fee";
-  if (t === "attendance") return "attendance";
-  if (t === "test") return "test";
-  if (t === "exam") return "exam";
+  const t = String(n?.type || "").toLowerCase()
+  const msg = String(n?.message || "").toLowerCase()
+
+  if (t === "fee") return "fee"
+  if (t === "attendance") return "attendance"
+  if (t === "test") return "test"
+  if (t === "examination" || t === "exam") return "examination"
+
+  // Legacy "academic" fallback
   if (t === "academic") {
-    if (msg.includes("exam")) return "exam";
-    return "test";
+    if (msg.includes("exam")) return "examination"
+    return "test"
   }
-  return "info";
+  return "info"
 }
 
-// Maps this screen's Kind values to the sound-settings NotifType keys
-function toSoundType(kind: Kind): NotifType {
-  if (kind === "exam") return "examination";
-  if (kind === "test") return "test";
-  if (kind === "fee") return "fee";
-  return "attendance";
-}
+export default function NotificationScreen() {
+  const { user } = useAuth()
+  const students = user?.students || []
 
-const KIND_LABEL: Record<Kind, string> = {
-  attendance: "Attendance",
-  test: "Test Section",
-  exam: "Examination",
-  fee: "Fee",
-  info: "Notification",
-};
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const busyRef = useRef(false)
 
-export default function Notification() {
-  const { user } = useAuth();
-  const students = user?.students || [];
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // ✅ Multi-select mode
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  // ✅ Tracks which notification IDs we've already seen, so we only
-  // play sound for genuinely NEW ones (not on every fetch/reopen)
-  const seenIdsRef = useRef<Set<string> | null>(null);
-
-  useEffect(() => {
-    if (students.length > 0) fetchAll();
-    else setLoading(false);
-
-    const interval = setInterval(() => {
-      if (students.length > 0) fetchAll(true);
-    }, POLL_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-  }, [user?.students]);
-
-  async function fetchAll(isPoll: boolean = false) {
+  // ─── Fetch all notifications for every student ───
+  const fetchAll = useCallback(async () => {
+    if (busyRef.current) return
+    busyRef.current = true
     try {
-      if (!isPoll) setLoading(true);
-      const all: any[] = [];
+      if (students.length === 0) {
+        setNotifications([])
+        setLoading(false)
+        return
+      }
+
+      const all: any[] = []
       for (const s of students) {
         try {
           const res = await fetch(
             `${BASE_URL}/api/notifications?studentId=${s.id}`
-          );
-          if (!res.ok) continue;
-          const data = await res.json();
+          )
+          if (!res.ok) continue
+          const data = await res.json()
           if (Array.isArray(data)) {
-            data.forEach((n: any) => {
-              n._studentName = s.name;
-              n._studentId = s.id;
-            });
-            all.push(...data);
+            data.forEach((n) => {
+              n._studentName = s.name
+              n._studentId = s.id
+            })
+            all.push(...data)
           }
         } catch (e) {
-          console.log("Fetch error for student", s.id, e);
+          console.log("Fetch error for student", s.id, e)
         }
       }
+
+      // Newest first
       all.sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-
-      // ✅ Detect new notifications since last check and play their assigned sound
-      const currentIds = new Set(all.map((n) => String(n.id)));
-      if (seenIdsRef.current !== null) {
-        const newOnes = all.filter(
-          (n) => !seenIdsRef.current!.has(String(n.id))
-        );
-        for (const n of newOnes) {
-          const kind = getKind(n);
-          await playNotificationSound(toSoundType(kind));
-        }
-      }
-      seenIdsRef.current = currentIds;
-
-      setNotifications(all);
+      )
+      setNotifications(all)
     } catch (e) {
-      console.log("Failed to fetch notifications:", e);
+      console.log("Fetch all error:", e)
     } finally {
-      if (!isPoll) setLoading(false);
+      setLoading(false)
+      busyRef.current = false
     }
+  }, [students])
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true)
+      fetchAll()
+    }, [fetchAll])
+  )
+
+  async function onRefresh() {
+    setRefreshing(true)
+    await fetchAll()
+    setRefreshing(false)
   }
 
+  // ─── Mark one as read ───
   async function markAsRead(id: string) {
     try {
       await fetch(`${BASE_URL}/api/notifications`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
-      });
+      })
     } catch (e) {
-      console.log("Failed to mark as read:", e);
+      console.log("markAsRead error:", e)
     }
   }
 
-  // Delete one (existing behavior)
-  async function deleteNotification(id: string) {
+  // ─── Delete one ───
+  function confirmDelete(id: string) {
     Alert.alert("Delete Notification", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -146,150 +140,137 @@ export default function Notification() {
           try {
             await fetch(`${BASE_URL}/api/notifications?id=${id}`, {
               method: "DELETE",
-            });
-            setNotifications((prev) => prev.filter((n) => n.id !== id));
+            })
+            setNotifications((prev) => prev.filter((n) => n.id !== id))
             setSelectedIds((prev) => {
-              const copy = new Set(prev);
-              copy.delete(id);
-              return copy;
-            });
+              const next = new Set(prev)
+              next.delete(id)
+              return next
+            })
           } catch (e) {
-            console.log("Failed to delete:", e);
+            console.log("Delete error:", e)
           }
         },
       },
-    ]);
+    ])
   }
 
-  // ✅ Delete everything selected
-  async function deleteSelected() {
-    if (selectedIds.size === 0) {
-      Alert.alert("Nothing selected", "Select at least one notification first.");
-      return;
-    }
+  // ─── Bulk delete ───
+  function confirmBulkDelete() {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
     Alert.alert(
-      "Delete Selected",
-      `Delete ${selectedIds.size} notification${selectedIds.size === 1 ? "" : "s"}?`,
+      "Delete Notifications",
+      `Delete ${ids.length} notification${ids.length === 1 ? "" : "s"}?`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            const ids = Array.from(selectedIds);
             for (const id of ids) {
               try {
                 await fetch(`${BASE_URL}/api/notifications?id=${id}`, {
                   method: "DELETE",
-                });
+                })
               } catch (e) {
-                console.log("Delete failed:", id, e);
+                console.log("Bulk delete error:", e)
               }
             }
-            setNotifications((prev) => prev.filter((n) => !selectedIds.has(n.id)));
-            setSelectedIds(new Set());
-            setSelectMode(false);
+            setNotifications((prev) =>
+              prev.filter((n) => !selectedIds.has(String(n.id)))
+            )
+            setSelectedIds(new Set())
+            setSelectMode(false)
           },
         },
       ]
-    );
+    )
   }
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
-      const copy = new Set(prev);
-      if (copy.has(id)) copy.delete(id);
-      else copy.add(id);
-      return copy;
-    });
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
-  function selectAll() {
-    setSelectedIds(new Set(notifications.map((n) => String(n.id))));
-  }
-
-  function clearSelection() {
-    setSelectedIds(new Set());
-  }
-
-  function exitSelectMode() {
-    setSelectMode(false);
-    setSelectedIds(new Set());
-  }
-
+  // ─── Tap handler — opens the correct screen ───
   function handleTap(n: any) {
     if (selectMode) {
-      toggleSelect(String(n.id));
-      return;
+      toggleSelect(String(n.id))
+      return
     }
-    markAsRead(n.id);
+
+    markAsRead(n.id)
     setNotifications((prev) =>
       prev.map((x) => (x.id === n.id ? { ...x, readStatus: true } : x))
-    );
-    const studentId = n._studentId;
-    const kind = getKind(n);
+    )
+
+    const studentId = n._studentId
+    const kind = getKind(n)
+
     if (kind === "attendance") {
-      router.push({ pathname: "/attendance", params: { studentId } });
+      router.push({ pathname: "/attendance", params: { studentId } })
     } else if (kind === "test") {
-      router.push({ pathname: "/testing", params: { studentId } });
-    } else if (kind === "exam") {
-      router.push({ pathname: "/examination", params: { studentId } });
+      router.push({ pathname: "/testing", params: { studentId } })
+    } else if (kind === "examination") {
+      router.push({ pathname: "/examination", params: { studentId } })
     } else if (kind === "fee") {
-      router.push({ pathname: "/fee", params: { studentId } });
+      router.push({ pathname: "/fee", params: { studentId } })
     }
   }
 
   const unreadCount = notifications.filter(
     (n) => n.readStatus === false || n.readStatus === 0
-  ).length;
+  ).length
 
+  // ─── Style helpers ───
   function getBadgeStyle(kind: Kind) {
-    if (kind === "test") return styles.testBadge;
-    if (kind === "exam") return styles.examBadge;
-    if (kind === "fee") return styles.feeBadge;
-    if (kind === "attendance") return styles.attendanceBadge;
-    return styles.infoBadge;
+    const s = KIND_STYLE[kind]
+    return { backgroundColor: s.bg, color: s.color }
   }
   function getBorderStyle(kind: Kind) {
-    if (kind === "test") return styles.testCard;
-    if (kind === "exam") return styles.examCard;
-    if (kind === "fee") return styles.feeCard;
-    if (kind === "attendance") return styles.attendanceCard;
-    return styles.infoCard;
+    return { borderLeftColor: KIND_STYLE[kind].color }
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* Top bar */}
+    <View style={styles.safe}>
+      <StatusBar barStyle="light-content" backgroundColor="#1e1b4b" />
+
+      {/* TOP BAR */}
       <View style={styles.topBar}>
         {selectMode ? (
           <>
-            <TouchableOpacity onPress={exitSelectMode} style={styles.iconBtn}>
+            <TouchableOpacity
+              onPress={() => {
+                setSelectMode(false)
+                setSelectedIds(new Set())
+              }}
+              style={styles.iconBtn}
+            >
               <Ionicons name="close" size={22} color="#2563eb" />
             </TouchableOpacity>
             <Text style={styles.title}>
               {selectedIds.size} selected
             </Text>
-            <TouchableOpacity
-              onPress={
-                selectedIds.size === notifications.length ? clearSelection : selectAll
-              }
-              style={styles.textBtn}
-            >
-              <Text style={styles.textBtnLabel}>
-                {selectedIds.size === notifications.length ? "Unselect All" : "Select All"}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={deleteSelected}
-              style={styles.deleteSelectedBtn}
-            >
-              <Ionicons name="trash" size={18} color="#fff" />
-            </TouchableOpacity>
+            {selectedIds.size > 0 && (
+              <TouchableOpacity
+                onPress={confirmBulkDelete}
+                style={styles.iconBtn}
+              >
+                <Ionicons name="trash" size={20} color="#ef4444" />
+              </TouchableOpacity>
+            )}
           </>
         ) : (
           <>
-            <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={styles.iconBtn}
+            >
               <Ionicons name="arrow-back" size={22} color="#2563eb" />
             </TouchableOpacity>
             <Text style={styles.title}>Notifications</Text>
@@ -301,16 +282,20 @@ export default function Notification() {
             {notifications.length > 0 && (
               <TouchableOpacity
                 onPress={() => setSelectMode(true)}
-                style={styles.selectToggleBtn}
+                style={styles.iconBtn}
               >
-                <Ionicons name="checkmark-done" size={18} color="#2563eb" />
-                <Text style={styles.selectToggleText}>Select</Text>
+                <Ionicons
+                  name="checkmark-circle-outline"
+                  size={22}
+                  color="#2563eb"
+                />
               </TouchableOpacity>
             )}
           </>
         )}
       </View>
 
+      {/* BODY */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#2563eb" />
@@ -318,19 +303,41 @@ export default function Notification() {
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.center}>
-          <Ionicons name="notifications-off-outline" size={48} color="#cbd5e1" />
+          <Ionicons
+            name="notifications-off-outline"
+            size={48}
+            color="#cbd5e1"
+          />
           <Text style={styles.emptyText}>No notifications yet.</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={["#2563eb"]}
+            />
+          }
+        >
           {notifications.map((n) => {
-            const isUnread = n.readStatus === false || n.readStatus === 0;
-            const kind = getKind(n);
-            const isSelected = selectedIds.has(String(n.id));
+            const kind = getKind(n)
+            const isUnread = n.readStatus === false || n.readStatus === 0
+            const isSelected = selectedIds.has(String(n.id))
+            const style = KIND_STYLE[kind]
+
             return (
               <TouchableOpacity
                 key={n.id}
                 onPress={() => handleTap(n)}
+                onLongPress={() => {
+                  if (!selectMode) {
+                    setSelectMode(true)
+                    toggleSelect(String(n.id))
+                  }
+                }}
+                activeOpacity={0.75}
                 style={[
                   styles.card,
                   isUnread && !selectMode && styles.unreadCard,
@@ -340,7 +347,6 @@ export default function Notification() {
               >
                 <View style={styles.cardTop}>
                   <View style={styles.cardTopLeft}>
-                    {/* ✅ Checkbox in select mode */}
                     {selectMode && (
                       <View
                         style={[
@@ -354,55 +360,51 @@ export default function Notification() {
                       </View>
                     )}
                     <Text style={[styles.badge, getBadgeStyle(kind)]}>
-                      {KIND_LABEL[kind]}
+                      {style.label}
                     </Text>
-                    {isUnread && !selectMode && <View style={styles.unreadDot} />}
-                    <Text style={styles.studentTag}>{n._studentName}</Text>
+                    {isUnread && !selectMode && (
+                      <View style={styles.unreadDot} />
+                    )}
+                    {n._studentName && (
+                      <Text style={styles.studentTag}>{n._studentName}</Text>
+                    )}
                   </View>
                   {!selectMode && (
                     <TouchableOpacity
-                      onPress={() => deleteNotification(n.id)}
+                      onPress={() => confirmDelete(n.id)}
                       style={styles.deleteBtn}
+                      hitSlop={8}
                     >
-                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                      <Ionicons
+                        name="trash-outline"
+                        size={18}
+                        color="#ef4444"
+                      />
                     </TouchableOpacity>
                   )}
                 </View>
 
                 <Text style={styles.message}>{n.message}</Text>
 
-                <Text style={styles.hint}>
-                  {selectMode
-                    ? ""
-                    : kind === "test"
-                    ? "Tap to view Test Section →"
-                    : kind === "exam"
-                    ? "Tap to view Examination →"
-                    : kind === "fee"
-                    ? "Tap to view Fee Management →"
-                    : kind === "attendance"
-                    ? "Tap to view Attendance →"
-                    : ""}
-                </Text>
-
                 <Text style={styles.time}>
                   {new Date(n.createdAt).toLocaleString()}
                 </Text>
               </TouchableOpacity>
-            );
+            )
           })}
         </ScrollView>
       )}
-    </SafeAreaView>
-  );
+    </View>
+  )
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f4f6f8" },
   topBar: {
     backgroundColor: "#fff",
-    padding: 20,
-    paddingTop: 55,
+    paddingHorizontal: 16,
+    paddingTop: HEADER_TOP,
+    paddingBottom: 16,
     elevation: 3,
     flexDirection: "row",
     alignItems: "center",
@@ -419,95 +421,66 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   countBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-
-  // ✅ Select-mode toggle button
-  selectToggleBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#eef2ff",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  selectToggleText: { color: "#2563eb", fontWeight: "800", fontSize: 12 },
-
-  // ✅ In select mode
-  textBtn: { paddingHorizontal: 8, paddingVertical: 6 },
-  textBtnLabel: { color: "#2563eb", fontWeight: "800", fontSize: 13 },
-  deleteSelectedBtn: {
-    backgroundColor: "#ef4444",
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  // ✅ Checkbox
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: "#cbd5e1",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fff",
-    marginRight: 6,
-  },
-  checkboxChecked: {
-    backgroundColor: "#2563eb",
-    borderColor: "#2563eb",
-  },
-
-  selectedCard: {
-    borderWidth: 2,
-    borderColor: "#2563eb",
-    backgroundColor: "#eff6ff",
-  },
-
   center: { flex: 1, justifyContent: "center", alignItems: "center", gap: 10 },
   loadingText: { color: "#64748b", marginTop: 8 },
   emptyText: { fontSize: 15, color: "#94a3b8" },
   list: { padding: 16, gap: 12 },
   card: {
     backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 14,
+    padding: 14,
     elevation: 2,
     borderWidth: 1,
     borderColor: "#e2e8f0",
+    borderLeftWidth: 4,
   },
-  unreadCard: { borderLeftWidth: 4 },
-  testCard: { borderLeftColor: "#4f46e5" },
-  examCard: { borderLeftColor: "#7c3aed" },
-  attendanceCard: { borderLeftColor: "#3b82f6" },
-  feeCard: { borderLeftColor: "#16a34a" },
-  infoCard: { borderLeftColor: "#4f46e5" },
+  unreadCard: { backgroundColor: "#fff" },
+  selectedCard: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#60a5fa",
+    borderWidth: 1.5,
+  },
   cardTop: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 8,
   },
-  cardTopLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  cardTopLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
   badge: {
     fontSize: 11,
     fontWeight: "700",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 20,
+    overflow: "hidden",
   },
-  testBadge: { backgroundColor: "#e0e7ff", color: "#4f46e5" },
-  examBadge: { backgroundColor: "#ede9fe", color: "#7c3aed" },
-  attendanceBadge: { backgroundColor: "#dbeafe", color: "#2563eb" },
-  feeBadge: { backgroundColor: "#dcfce7", color: "#16a34a" },
-  infoBadge: { backgroundColor: "#e0e7ff", color: "#4f46e5" },
-  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" },
-  studentTag: { fontSize: 11, color: "#64748b", marginLeft: 4 },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#ef4444",
+  },
+  studentTag: { fontSize: 11, color: "#64748b", marginLeft: 2 },
   deleteBtn: { padding: 4 },
-  message: { fontSize: 13, color: "#475569", lineHeight: 20, marginBottom: 4 },
-  hint: { fontSize: 11, color: "#4f46e5", fontWeight: "700", marginBottom: 6 },
+  message: {
+    fontSize: 13,
+    color: "#475569",
+    lineHeight: 20,
+    marginBottom: 8,
+  },
   time: { fontSize: 11, color: "#94a3b8" },
-});
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#cbd5e1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxChecked: {
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
+  },
+})
