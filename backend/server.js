@@ -35,7 +35,6 @@ const toInt = (v) => {
   return isNaN(n) ? null : n;
 };
 
-// ✅ Prevent Vercel CDN caching — call at the top of every GET route
 function noCache(res) {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");
@@ -43,7 +42,6 @@ function noCache(res) {
   res.set("Surrogate-Control", "no-store");
 }
 
-// ✅ Normalize any phone format to 03XXXXXXXXX
 function normalizePhone(input) {
   if (!input) return "";
   let p = String(input).replace(/[\s\-()]/g, "").trim();
@@ -54,33 +52,47 @@ function normalizePhone(input) {
   return p;
 }
 
-async function getAttendancePercent(studentId) {
+async function getAttendancePercent(studentMongoId) {
   const database = await connectDB();
+  const student = await database
+    .collection("students")
+    .findOne({ _id: studentMongoId });
+  if (!student) return 100;
+
   const records = await database
     .collection("attendance")
-    .find({ studentId: String(studentId) })
+    .find({
+      studentId: String(student.id),
+      schoolId: student.schoolId,
+      program: student.program || "school",
+    })
     .toArray();
   if (records.length === 0) return 100;
-  const present = records.filter(
-    (r) => r.status === "P" || r.present === true
-  ).length;
+  const present = records.filter((r) => r.status === "P" || r.present === true).length;
   return Math.round((present / records.length) * 100);
 }
 
-// ✅ Format a student document the way the mobile app expects it
 async function formatStudent(s) {
   return {
     id: s.id,
+    _id: s._id.toString(),
+    schoolId: s.schoolId || "",
+    program: s.program || "school",
     name: s.name,
     fatherName: s.fatherName || "",
     grade: s.grade || "",
     section: s.section || "",
     session: s.session || "",
+    year: s.year || "",
+    subject: s.subject || "",
+    batchNo: s.batchNo || "",
+    courseDuration: s.courseDuration || "",
     admissionNo: s.admissionNo || "",
     rollNo: s.rollNo ?? null,
     contact: s.contact || "",
-    fee: s.fee ?? 0,
-    attendancePercent: await getAttendancePercent(s.id),
+    fee: s.fee ?? s.monthlyFee ?? 0,
+    image: s.image || null,
+    attendancePercent: await getAttendancePercent(s._id),
   };
 }
 
@@ -103,9 +115,7 @@ app.post("/api/parent/login", async (req, res) => {
         .json({ success: false, error: "No student found with this number" });
     }
 
-    let parent = await database
-      .collection("parents")
-      .findOne({ phone: normalized });
+    let parent = await database.collection("parents").findOne({ phone: normalized });
     if (!parent) {
       const r = await database.collection("parents").insertOne({
         phone: normalized,
@@ -114,16 +124,10 @@ app.post("/api/parent/login", async (req, res) => {
       });
       parent = { _id: r.insertedId, phone: normalized, password };
     } else if (parent.password !== password) {
-      return res
-        .status(401)
-        .json({ success: false, error: "Invalid credentials" });
+      return res.status(401).json({ success: false, error: "Invalid credentials" });
     }
 
-    const all = await database
-      .collection("students")
-      .find(query)
-      .sort({ id: 1 })
-      .toArray();
+    const all = await database.collection("students").find(query).sort({ id: 1 }).toArray();
 
     const students = [];
     for (const s of all) {
@@ -149,30 +153,19 @@ app.get("/api/parent/:parentId/students", async (req, res) => {
     const database = await connectDB();
     let parent;
     try {
-      parent = await database
-        .collection("parents")
-        .findOne({ _id: new ObjectId(parentId) });
+      parent = await database.collection("parents").findOne({ _id: new ObjectId(parentId) });
     } catch {
       parent = await database
         .collection("parents")
         .findOne({ phone: normalizePhone(parentId) });
     }
     if (!parent)
-      return res
-        .status(404)
-        .json({ success: false, error: "Parent not found" });
+      return res.status(404).json({ success: false, error: "Parent not found" });
 
     const query = {
-      $or: [
-        { contact: normalizePhone(parent.phone) },
-        { contact: parent.phone },
-      ],
+      $or: [{ contact: normalizePhone(parent.phone) }, { contact: parent.phone }],
     };
-    const all = await database
-      .collection("students")
-      .find(query)
-      .sort({ id: 1 })
-      .toArray();
+    const all = await database.collection("students").find(query).sort({ id: 1 }).toArray();
 
     const students = [];
     for (const s of all) {
@@ -213,11 +206,7 @@ app.get("/api/students", async (req, res) => {
   noCache(res);
   try {
     const database = await connectDB();
-    const students = await database
-      .collection("students")
-      .find({})
-      .sort({ id: 1 })
-      .toArray();
+    const students = await database.collection("students").find({}).sort({ id: 1 }).toArray();
     res.json({
       success: true,
       data: students.map((s) => ({ ...s, _id: s._id.toString() })),
@@ -228,18 +217,20 @@ app.get("/api/students", async (req, res) => {
 });
 
 // =====================================================
-// ATTENDANCE
+// ATTENDANCE — program + schoolId aware
 // =====================================================
 
 app.get("/api/attendance", async (req, res) => {
   noCache(res);
-  const { studentId } = req.query;
+  const { studentId, program, schoolId } = req.query;
   try {
     const database = await connectDB();
-    const records = await database
-      .collection("attendance")
-      .find({ studentId: String(studentId) })
-      .toArray();
+    const query = { studentId: String(studentId) };
+    if (program) query.program = String(program);
+    if (schoolId) query.schoolId = String(schoolId);
+
+    const records = await database.collection("attendance").find(query).toArray();
+
     res.json(
       records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined }))
     );
@@ -252,9 +243,7 @@ app.delete("/api/attendance/month", async (req, res) => {
   const { studentId, month } = req.query;
   try {
     if (!studentId || !month) {
-      return res
-        .status(400)
-        .json({ error: "studentId and month are required" });
+      return res.status(400).json({ error: "studentId and month are required" });
     }
     const database = await connectDB();
     const result = await database
@@ -267,18 +256,20 @@ app.delete("/api/attendance/month", async (req, res) => {
 });
 
 // =====================================================
-// TESTS
+// TESTS — program + schoolId aware
 // =====================================================
 
 app.get("/api/tests", async (req, res) => {
   noCache(res);
-  const { studentId, month, testType } = req.query;
+  const { studentId, month, testType, program, schoolId } = req.query;
   try {
     const database = await connectDB();
     const query = {};
     if (studentId) query.studentId = String(studentId);
     if (month) query.month = String(month);
     if (testType) query.testType = String(testType);
+    if (program) query.program = String(program);
+    if (schoolId) query.schoolId = String(schoolId);
 
     const records = await database
       .collection("tests")
@@ -286,9 +277,7 @@ app.get("/api/tests", async (req, res) => {
       .sort({ updatedAt: -1 })
       .toArray();
 
-    res.json(
-      records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined }))
-    );
+    res.json(records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -299,9 +288,7 @@ app.delete("/api/tests", async (req, res) => {
   try {
     if (!id) return res.status(400).json({ error: "id is required" });
     const database = await connectDB();
-    const result = await database
-      .collection("tests")
-      .deleteOne({ _id: new ObjectId(id) });
+    const result = await database.collection("tests").deleteOne({ _id: new ObjectId(id) });
     res.json({ success: true, deletedCount: result.deletedCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -309,18 +296,20 @@ app.delete("/api/tests", async (req, res) => {
 });
 
 // =====================================================
-// EXAMS
+// EXAMS — program + schoolId aware
 // =====================================================
 
 app.get("/api/exams", async (req, res) => {
   noCache(res);
-  const { studentId, month, examType } = req.query;
+  const { studentId, month, examType, program, schoolId } = req.query;
   try {
     const database = await connectDB();
     const query = {};
     if (studentId) query.studentId = String(studentId);
     if (month) query.month = String(month);
     if (examType) query.examType = String(examType);
+    if (program) query.program = String(program);
+    if (schoolId) query.schoolId = String(schoolId);
 
     const records = await database
       .collection("exams")
@@ -328,9 +317,7 @@ app.get("/api/exams", async (req, res) => {
       .sort({ updatedAt: -1 })
       .toArray();
 
-    res.json(
-      records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined }))
-    );
+    res.json(records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -341,9 +328,7 @@ app.delete("/api/exams", async (req, res) => {
   try {
     if (!id) return res.status(400).json({ error: "id is required" });
     const database = await connectDB();
-    const result = await database
-      .collection("exams")
-      .deleteOne({ _id: new ObjectId(id) });
+    const result = await database.collection("exams").deleteOne({ _id: new ObjectId(id) });
     res.json({ success: true, deletedCount: result.deletedCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -351,17 +336,19 @@ app.delete("/api/exams", async (req, res) => {
 });
 
 // =====================================================
-// FEES
+// FEES — program + schoolId aware
 // =====================================================
 
 app.get("/api/fees", async (req, res) => {
   noCache(res);
-  const { studentId, month } = req.query;
+  const { studentId, month, program, schoolId } = req.query;
   try {
     const database = await connectDB();
     const query = {};
     if (studentId) query.studentId = String(studentId);
     if (month) query.month = String(month);
+    if (program) query.program = String(program);
+    if (schoolId) query.schoolId = String(schoolId);
 
     const records = await database
       .collection("fees")
@@ -369,9 +356,7 @@ app.get("/api/fees", async (req, res) => {
       .sort({ paidAt: -1 })
       .toArray();
 
-    res.json(
-      records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined }))
-    );
+    res.json(records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -382,9 +367,7 @@ app.delete("/api/fees", async (req, res) => {
   try {
     if (!id) return res.status(400).json({ error: "id is required" });
     const database = await connectDB();
-    const result = await database
-      .collection("fees")
-      .deleteOne({ _id: new ObjectId(id) });
+    const result = await database.collection("fees").deleteOne({ _id: new ObjectId(id) });
     res.json({ success: true, deletedCount: result.deletedCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -406,10 +389,7 @@ app.post("/api/parent/push-token", async (req, res) => {
     const database = await connectDB();
     await database
       .collection("parents")
-      .updateOne(
-        { _id: new ObjectId(parentId) },
-        { $set: { pushToken } }
-      );
+      .updateOne({ _id: new ObjectId(parentId) }, { $set: { pushToken } });
     res.json({ success: true });
   } catch (err) {
     console.error("❌ Push token save error:", err);
@@ -418,16 +398,18 @@ app.post("/api/parent/push-token", async (req, res) => {
 });
 
 // =====================================================
-// NOTIFICATIONS
+// NOTIFICATIONS — filter by studentId + program + schoolId
 // =====================================================
 
 app.get("/api/notifications", async (req, res) => {
   noCache(res);
-  const { studentId } = req.query;
+  const { studentId, program, schoolId } = req.query;
   try {
     const database = await connectDB();
     const query = {};
     if (studentId) query.studentId = String(studentId);
+    if (program) query.program = String(program);
+    if (schoolId) query.schoolId = String(schoolId);
 
     const records = await database
       .collection("notifications")
@@ -435,8 +417,28 @@ app.get("/api/notifications", async (req, res) => {
       .sort({ createdAt: -1 })
       .toArray();
 
+    // Backfill program for old notifications
+    const missingProgram = records.filter((r) => !r.program);
+    let programById = {};
+    if (missingProgram.length > 0) {
+      const ids = [...new Set(missingProgram.map((r) => Number(r.studentId)))];
+      const students = await database
+        .collection("students")
+        .find({ id: { $in: ids } })
+        .project({ id: 1, program: 1 })
+        .toArray();
+      students.forEach((s) => {
+        programById[String(s.id)] = s.program || "school";
+      });
+    }
+
     res.json(
-      records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined }))
+      records.map((r) => ({
+        ...r,
+        id: r._id.toString(),
+        _id: undefined,
+        program: r.program || programById[String(r.studentId)] || "school",
+      }))
     );
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -460,9 +462,7 @@ app.delete("/api/notifications", async (req, res) => {
   const { id } = req.query;
   try {
     const database = await connectDB();
-    await database
-      .collection("notifications")
-      .deleteOne({ _id: new ObjectId(id) });
+    await database.collection("notifications").deleteOne({ _id: new ObjectId(id) });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -480,7 +480,7 @@ app.get("/test-students", async (req, res) => {
     const students = await database
       .collection("students")
       .find({})
-      .project({ id: 1, name: 1, contact: 1, grade: 1 })
+      .project({ id: 1, name: 1, contact: 1, grade: 1, program: 1, schoolId: 1 })
       .toArray();
     res.json({ students });
   } catch (err) {

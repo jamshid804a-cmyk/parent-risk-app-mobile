@@ -19,13 +19,18 @@ const BASE_URL = "https://parentriskapp-backend.vercel.app"
 const HEADER_TOP =
   Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 10 : 54
 
-// ─── Color + label map ───
 const KIND_STYLE = {
   attendance: { color: "#2563eb", bg: "#dbeafe", label: "Attendance" },
   test: { color: "#0891b2", bg: "#cffafe", label: "Test" },
   examination: { color: "#7c3aed", bg: "#ede9fe", label: "Examination" },
   fee: { color: "#059669", bg: "#d1fae5", label: "Fee" },
   info: { color: "#4f46e5", bg: "#e0e7ff", label: "Notification" },
+} as const
+
+// ✅ NEW — section styles
+const SECTION_STYLE = {
+  school: { color: "#1d4ed8", bg: "#dbeafe", label: "School" },
+  academy: { color: "#7c3aed", bg: "#ede9fe", label: "Academy" },
 } as const
 
 type Kind = keyof typeof KIND_STYLE
@@ -39,7 +44,6 @@ function getKind(n: any): Kind {
   if (t === "test") return "test"
   if (t === "examination" || t === "exam") return "examination"
 
-  // Legacy "academic" fallback
   if (t === "academic") {
     if (msg.includes("exam")) return "examination"
     return "test"
@@ -58,7 +62,6 @@ export default function NotificationScreen() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const busyRef = useRef(false)
 
-  // ─── Fetch all notifications for every student ───
   const fetchAll = useCallback(async () => {
     if (busyRef.current) return
     busyRef.current = true
@@ -72,15 +75,21 @@ export default function NotificationScreen() {
       const all: any[] = []
       for (const s of students) {
         try {
-          const res = await fetch(
-            `${BASE_URL}/api/notifications?studentId=${s.id}`
-          )
+          // ✅ Pass program + schoolId so notifications don't mix
+          const qs = new URLSearchParams({ studentId: String(s.id) })
+          if (s.program) qs.append("program", s.program)
+          if (s.schoolId) qs.append("schoolId", s.schoolId)
+
+          const res = await fetch(`${BASE_URL}/api/notifications?${qs.toString()}`)
           if (!res.ok) continue
           const data = await res.json()
           if (Array.isArray(data)) {
             data.forEach((n) => {
               n._studentName = s.name
               n._studentId = s.id
+              n._studentProgram = s.program || n.program || "school"
+              n._studentSchoolId = s.schoolId
+              if (!n.program) n.program = n._studentProgram
             })
             all.push(...data)
           }
@@ -89,7 +98,6 @@ export default function NotificationScreen() {
         }
       }
 
-      // Newest first
       all.sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -116,7 +124,6 @@ export default function NotificationScreen() {
     setRefreshing(false)
   }
 
-  // ─── Mark one as read ───
   async function markAsRead(id: string) {
     try {
       await fetch(`${BASE_URL}/api/notifications`, {
@@ -129,7 +136,6 @@ export default function NotificationScreen() {
     }
   }
 
-  // ─── Delete one ───
   function confirmDelete(id: string) {
     Alert.alert("Delete Notification", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
@@ -155,7 +161,6 @@ export default function NotificationScreen() {
     ])
   }
 
-  // ─── Bulk delete ───
   function confirmBulkDelete() {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return
@@ -197,7 +202,6 @@ export default function NotificationScreen() {
     })
   }
 
-  // ─── Tap handler — opens the correct screen ───
   function handleTap(n: any) {
     if (selectMode) {
       toggleSelect(String(n.id))
@@ -210,16 +214,19 @@ export default function NotificationScreen() {
     )
 
     const studentId = n._studentId
+    const program = n.program || n._studentProgram || "school"
+    const schoolId = n._studentSchoolId || n.schoolId
     const kind = getKind(n)
+    const params: any = { studentId, program, schoolId }
 
     if (kind === "attendance") {
-      router.push({ pathname: "/attendance", params: { studentId } })
+      router.push({ pathname: "/attendance", params })
     } else if (kind === "test") {
-      router.push({ pathname: "/testing", params: { studentId } })
+      router.push({ pathname: "/testing", params })
     } else if (kind === "examination") {
-      router.push({ pathname: "/examination", params: { studentId } })
+      router.push({ pathname: "/examination", params })
     } else if (kind === "fee") {
-      router.push({ pathname: "/fee", params: { studentId } })
+      router.push({ pathname: "/fee", params })
     }
   }
 
@@ -227,7 +234,6 @@ export default function NotificationScreen() {
     (n) => n.readStatus === false || n.readStatus === 0
   ).length
 
-  // ─── Style helpers ───
   function getBadgeStyle(kind: Kind) {
     const s = KIND_STYLE[kind]
     return { backgroundColor: s.bg, color: s.color }
@@ -240,7 +246,6 @@ export default function NotificationScreen() {
     <View style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#1e1b4b" />
 
-      {/* TOP BAR */}
       <View style={styles.topBar}>
         {selectMode ? (
           <>
@@ -253,24 +258,16 @@ export default function NotificationScreen() {
             >
               <Ionicons name="close" size={22} color="#2563eb" />
             </TouchableOpacity>
-            <Text style={styles.title}>
-              {selectedIds.size} selected
-            </Text>
+            <Text style={styles.title}>{selectedIds.size} selected</Text>
             {selectedIds.size > 0 && (
-              <TouchableOpacity
-                onPress={confirmBulkDelete}
-                style={styles.iconBtn}
-              >
+              <TouchableOpacity onPress={confirmBulkDelete} style={styles.iconBtn}>
                 <Ionicons name="trash" size={20} color="#ef4444" />
               </TouchableOpacity>
             )}
           </>
         ) : (
           <>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.iconBtn}
-            >
+            <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
               <Ionicons name="arrow-back" size={22} color="#2563eb" />
             </TouchableOpacity>
             <Text style={styles.title}>Notifications</Text>
@@ -284,18 +281,13 @@ export default function NotificationScreen() {
                 onPress={() => setSelectMode(true)}
                 style={styles.iconBtn}
               >
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={22}
-                  color="#2563eb"
-                />
+                <Ionicons name="checkmark-circle-outline" size={22} color="#2563eb" />
               </TouchableOpacity>
             )}
           </>
         )}
       </View>
 
-      {/* BODY */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#2563eb" />
@@ -303,11 +295,7 @@ export default function NotificationScreen() {
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.center}>
-          <Ionicons
-            name="notifications-off-outline"
-            size={48}
-            color="#cbd5e1"
-          />
+          <Ionicons name="notifications-off-outline" size={48} color="#cbd5e1" />
           <Text style={styles.emptyText}>No notifications yet.</Text>
         </View>
       ) : (
@@ -326,6 +314,7 @@ export default function NotificationScreen() {
             const isUnread = n.readStatus === false || n.readStatus === 0
             const isSelected = selectedIds.has(String(n.id))
             const style = KIND_STYLE[kind]
+            const section = SECTION_STYLE[n.program as keyof typeof SECTION_STYLE]
 
             return (
               <TouchableOpacity
@@ -362,9 +351,17 @@ export default function NotificationScreen() {
                     <Text style={[styles.badge, getBadgeStyle(kind)]}>
                       {style.label}
                     </Text>
-                    {isUnread && !selectMode && (
-                      <View style={styles.unreadDot} />
+                    {section && (
+                      <Text
+                        style={[
+                          styles.badge,
+                          { backgroundColor: section.bg, color: section.color },
+                        ]}
+                      >
+                        {section.label}
+                      </Text>
                     )}
+                    {isUnread && !selectMode && <View style={styles.unreadDot} />}
                     {n._studentName && (
                       <Text style={styles.studentTag}>{n._studentName}</Text>
                     )}
@@ -375,11 +372,7 @@ export default function NotificationScreen() {
                       style={styles.deleteBtn}
                       hitSlop={8}
                     >
-                      <Ionicons
-                        name="trash-outline"
-                        size={18}
-                        color="#ef4444"
-                      />
+                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -446,7 +439,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 8,
   },
-  cardTopLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  cardTopLeft: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1, flexWrap: "wrap" },
   badge: {
     fontSize: 11,
     fontWeight: "700",
