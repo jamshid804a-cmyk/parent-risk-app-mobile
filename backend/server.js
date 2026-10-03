@@ -503,4 +503,17 @@ app.get("/test-parents", async (req, res) => {
   }
 });
 
+// Clear all push tokens (for testing)
+app.delete("/test-parents/clear", async (req, res) => {
+  try {
+    const database = await connectDB();
+    await database
+      .collection("parents")
+      .updateMany({}, { $unset: { pushToken: "" } });
+    res.json({ success: true, message: "All push tokens cleared" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = app;

@@ -40,7 +40,9 @@ const AuthContext = createContext<AuthContextType>({
 
 const BASE_URL = "https://parentriskapp-backend.vercel.app";
 
-// Detect if running inside Expo Go — expo-notifications is unsupported there.
+// ─────────────────────────────────────────────
+// Detect Expo Go — expo-notifications push is unsupported there.
+// ─────────────────────────────────────────────
 function isExpoGo(): boolean {
   return (
     Constants.appOwnership === "expo" ||
@@ -62,36 +64,96 @@ function loadNotifications(): any {
   }
 }
 
-async function registerPushToken(parentId: string) {
+// ─────────────────────────────────────────────
+// Register the parent's Expo push token with the backend.
+// Runs robustly with multiple fallbacks + verbose logging.
+// ─────────────────────────────────────────────
+async function registerPushToken(parentId: string): Promise<string | null> {
   const N = loadNotifications();
   if (!N) {
     console.log("[push] skipping — Expo Go or module missing");
-    return;
+    return null;
   }
 
   try {
+    // 1. Permission
     const { status: existingStatus } = await N.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== "granted") {
       const { status } = await N.requestPermissionsAsync();
       finalStatus = status;
     }
-    if (finalStatus !== "granted") return;
+    if (finalStatus !== "granted") {
+      console.log("[push] permission not granted");
+      return null;
+    }
 
+    // 2. Android default channel
+    try {
+      if (N.setNotificationChannelAsync) {
+        await N.setNotificationChannelAsync("default", {
+          name: "Default",
+          importance: N.AndroidImportance?.HIGH ?? 4,
+        });
+      }
+    } catch (e) {
+      console.log("[push] channel error:", e);
+    }
+
+    // 3. Get projectId
     const projectId = Constants?.expoConfig?.extra?.eas?.projectId;
-    const tokenData = await N.getExpoPushTokenAsync({ projectId });
-    const pushToken = tokenData.data;
+    console.log("[push] projectId:", projectId);
 
-    await fetch(`${BASE_URL}/api/parent/push-token`, {
+    // 4. Get Expo push token
+    let pushToken: string | null = null;
+    if (projectId) {
+      try {
+        const tokenData = await N.getExpoPushTokenAsync({ projectId });
+        pushToken = tokenData?.data || null;
+        console.log("[push] Expo token:", pushToken);
+      } catch (e: any) {
+        console.log("[push] getExpoPushTokenAsync failed:", e?.message || e);
+      }
+    } else {
+      console.log("[push] no projectId — trying device token fallback");
+    }
+
+    // 5. Fallback to native device token
+    if (!pushToken) {
+      try {
+        const deviceData = await N.getDevicePushTokenAsync();
+        pushToken = deviceData?.data || null;
+        console.log("[push] Device token:", pushToken);
+      } catch (e: any) {
+        console.log("[push] getDevicePushTokenAsync failed:", e?.message || e);
+      }
+    }
+
+    if (!pushToken) {
+      console.log("[push] no token generated");
+      return null;
+    }
+
+    // 6. Save to backend
+    console.log("[push] saving token to backend...");
+    const res = await fetch(`${BASE_URL}/api/parent/push-token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ parentId, pushToken }),
     });
+    const body = await res.json().catch(() => ({}));
+    console.log("[push] save result:", res.status, body);
+
+    return pushToken;
   } catch (e) {
     console.log("Push token registration failed:", e);
+    return null;
   }
 }
 
+// ─────────────────────────────────────────────
+// Provider
+// ─────────────────────────────────────────────
 export const AuthProvider = ({ children }: any) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,7 +171,10 @@ export const AuthProvider = ({ children }: any) => {
         const parsed: User = JSON.parse(storedUser);
         setUser(parsed);
         userRef.current = parsed;
+
         await refreshFromServer(parsed.phone, parsed.password);
+
+        // Register push token after user is confirmed
         await registerPushToken(parsed.parentId);
       }
     } catch (error) {
@@ -165,7 +230,10 @@ export const AuthProvider = ({ children }: any) => {
       setUser(newUser);
       userRef.current = newUser;
       await AsyncStorage.setItem("user", JSON.stringify(newUser));
+
+      // Register push token after successful login
       await registerPushToken(newUser.parentId);
+
       return { success: true };
     } catch (error) {
       console.log("Login error:", error);
