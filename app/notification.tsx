@@ -27,7 +27,6 @@ const KIND_STYLE = {
   info: { color: "#4f46e5", bg: "#e0e7ff", label: "Notification" },
 } as const
 
-// ✅ NEW — section styles
 const SECTION_STYLE = {
   school: { color: "#1d4ed8", bg: "#dbeafe", label: "School" },
   academy: { color: "#7c3aed", bg: "#ede9fe", label: "Academy" },
@@ -75,7 +74,6 @@ export default function NotificationScreen() {
       const all: any[] = []
       for (const s of students) {
         try {
-          // ✅ Pass program + schoolId so notifications don't mix
           const qs = new URLSearchParams({ studentId: String(s.id) })
           if (s.program) qs.append("program", s.program)
           if (s.schoolId) qs.append("schoolId", s.schoolId)
@@ -202,6 +200,15 @@ export default function NotificationScreen() {
     })
   }
 
+  function selectAll() {
+    const all = new Set(notifications.map((n) => String(n.id)))
+    setSelectedIds(all)
+  }
+
+  function deselectAll() {
+    setSelectedIds(new Set())
+  }
+
   function handleTap(n: any) {
     if (selectMode) {
       toggleSelect(String(n.id))
@@ -242,6 +249,9 @@ export default function NotificationScreen() {
     return { borderLeftColor: KIND_STYLE[kind].color }
   }
 
+  const allSelected =
+    notifications.length > 0 && selectedIds.size === notifications.length
+
   return (
     <View style={styles.safe}>
       <StatusBar barStyle="light-content" backgroundColor="#1e1b4b" />
@@ -259,6 +269,19 @@ export default function NotificationScreen() {
               <Ionicons name="close" size={22} color="#2563eb" />
             </TouchableOpacity>
             <Text style={styles.title}>{selectedIds.size} selected</Text>
+
+            {/* Select All / Deselect All toggle */}
+            <TouchableOpacity
+              onPress={allSelected ? deselectAll : selectAll}
+              style={styles.iconBtn}
+            >
+              <Ionicons
+                name={allSelected ? "remove-circle-outline" : "checkmark-done-outline"}
+                size={22}
+                color="#2563eb"
+              />
+            </TouchableOpacity>
+
             {selectedIds.size > 0 && (
               <TouchableOpacity onPress={confirmBulkDelete} style={styles.iconBtn}>
                 <Ionicons name="trash" size={20} color="#ef4444" />

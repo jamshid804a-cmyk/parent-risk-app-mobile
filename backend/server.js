@@ -488,4 +488,19 @@ app.get("/test-students", async (req, res) => {
   }
 });
 
+app.get("/test-parents", async (req, res) => {
+  noCache(res);
+  try {
+    const database = await connectDB();
+    const parents = await database
+      .collection("parents")
+      .find({})
+      .project({ phone: 1, pushToken: 1, createdAt: 1 })
+      .toArray();
+    res.json({ parents });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = app;
