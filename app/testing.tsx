@@ -2,16 +2,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useAuth } from "../src/context/AuthContext";
 
@@ -21,17 +21,19 @@ const HEADER_TOP =
   Platform.OS === "android" ? (StatusBar.currentHeight || 24) + 10 : 54;
 
 interface TestRecord {
-  id: string; // Mongo _id
+  id: string;
   subject: string;
-  testType: string; // "Monthly" | "Weekly" | "Daily"
-  month: string; // "01/2026"
+  testType: string;
+  month: string;
   studentId: string;
-  grade: string;
-  marks: number;
+  grade?: string;
+  obtained?: number;
+  total?: number;
+  marks?: number;
+  totalMarks?: number;
   percentage: number;
-  section: string;
-  session: string;
-  totalMarks: number;
+  section?: string;
+  session?: string;
 }
 
 const TYPES = ["Monthly", "Weekly", "Daily"] as const;
@@ -62,15 +64,25 @@ const TYPE_STYLE: Record<
 
 export default function TestingScreen() {
   const { user } = useAuth();
-  const params = useLocalSearchParams<{ studentId?: string }>();
+  const params = useLocalSearchParams<{ studentId?: string; program?: string; schoolId?: string }>();
   const rawId = Array.isArray(params.studentId)
     ? params.studentId[0]
     : params.studentId;
+  const programParam = Array.isArray(params.program) ? params.program[0] : params.program;
+  const schoolIdParam = Array.isArray(params.schoolId) ? params.schoolId[0] : params.schoolId;
   const studentIdNum = rawId ? Number(rawId) : null;
 
+  // Find the student — prefer exact program + schoolId match
   const student =
-    user?.students?.find((s: any) => Number(s.id) === studentIdNum) ||
-    (studentIdNum ? null : user?.students?.[0]) ||
+    (user?.students || []).find((s: any) => {
+      const idMatch = Number(s.id) === studentIdNum;
+      if (!idMatch) return false;
+      if (programParam && s.program !== programParam) return false;
+      if (schoolIdParam && s.schoolId !== schoolIdParam) return false;
+      return true;
+    }) ||
+    (user?.students || []).find((s: any) => Number(s.id) === studentIdNum) ||
+    user?.students?.[0] ||
     null;
 
   const [tests, setTests] = useState<TestRecord[]>([]);
@@ -86,8 +98,11 @@ export default function TestingScreen() {
     }
     setError(null);
     try {
-      const url = `${BASE_URL}/api/tests?studentId=${student.id}`;
-      const res = await fetch(url);
+      const qs = new URLSearchParams({ studentId: String(student.id) });
+      if (student.program) qs.append("program", student.program);
+      if (student.schoolId) qs.append("schoolId", student.schoolId);
+
+      const res = await fetch(`${BASE_URL}/api/tests?${qs.toString()}`);
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const data = await res.json();
       setTests(Array.isArray(data) ? data : []);
@@ -138,7 +153,6 @@ export default function TestingScreen() {
     }
   }
 
-  // Group tests by test type
   const grouped: Record<string, TestRecord[]> = {
     Monthly: [],
     Weekly: [],
@@ -183,7 +197,9 @@ export default function TestingScreen() {
   }
 
   const studentName = student?.name || "Your Child";
-  const grade = student?.grade || "";
+  // For Academy: show the course. For School: show grade.
+  const isAcademy = student?.program === "academy";
+  const subtitleText = isAcademy ? (student?.subject || "") : (student?.grade || "");
 
   return (
     <View style={styles.safe}>
@@ -201,16 +217,12 @@ export default function TestingScreen() {
           />
         }
       >
-        {/* HERO */}
         <View style={styles.hero}>
           <View style={styles.circleA} />
           <View style={styles.circleB} />
 
           <View style={styles.topRow}>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.roundBtn}
-            >
+            <TouchableOpacity onPress={() => router.back()} style={styles.roundBtn}>
               <Ionicons name="arrow-back" size={20} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.topTitle}>Testing</Text>
@@ -220,17 +232,15 @@ export default function TestingScreen() {
           </View>
 
           <Text style={styles.heroName}>{studentName}</Text>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              marginTop: 8,
-            }}
-          >
-            {!!grade && (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            {!!subtitleText && (
               <View style={styles.heroChip}>
-                <Text style={styles.heroChipText}>Grade {grade}</Text>
+                <Text style={styles.heroChipText}>{subtitleText}</Text>
+              </View>
+            )}
+            {isAcademy && !!student?.batchNo && (
+              <View style={styles.heroChip}>
+                <Text style={styles.heroChipText}>{student.batchNo}</Text>
               </View>
             )}
             <View style={styles.heroChip}>
@@ -250,7 +260,7 @@ export default function TestingScreen() {
               </View>
               <Text style={styles.emptyTitle}>No tests yet</Text>
               <Text style={styles.emptySub}>
-                Tests added by the school will appear here.
+                Tests added by the {isAcademy ? "academy" : "school"} will appear here.
               </Text>
             </View>
           ) : (
@@ -262,46 +272,31 @@ export default function TestingScreen() {
               return (
                 <View
                   key={type}
-                  style={[
-                    styles.card,
-                    { marginTop: idx === 0 ? -34 : 14 },
-                  ]}
+                  style={[styles.card, { marginTop: idx === 0 ? -34 : 14 }]}
                 >
-                  {/* Section header */}
                   <View style={styles.sectionHead}>
-                    <View
-                      style={[
-                        styles.sectionIcon,
-                        { backgroundColor: style.bg },
-                      ]}
-                    >
-                      <Ionicons
-                        name={style.icon}
-                        size={18}
-                        color={style.color}
-                      />
+                    <View style={[styles.sectionIcon, { backgroundColor: style.bg }]}>
+                      <Ionicons name={style.icon} size={18} color={style.color} />
                     </View>
                     <Text style={styles.sectionTitle}>{style.label}</Text>
-                    <View
-                      style={[styles.countPill, { backgroundColor: style.bg }]}
-                    >
-                      <Text
-                        style={[styles.countPillText, { color: style.color }]}
-                      >
+                    <View style={[styles.countPill, { backgroundColor: style.bg }]}>
+                      <Text style={[styles.countPillText, { color: style.color }]}>
                         {list.length}
                       </Text>
                     </View>
                   </View>
 
-                  {/* Rows */}
                   {list.map((t, i) => {
+                    const obtainedNum = Number(t.obtained ?? t.marks ?? 0);
+                    const totalNum = Number(t.total ?? t.totalMarks ?? 0);
                     const pct =
                       typeof t.percentage === "number"
                         ? t.percentage
-                        : Math.round(
-                            (t.marks / (t.totalMarks || 100)) * 100
-                          );
+                        : totalNum > 0
+                        ? Math.round((obtainedNum / totalNum) * 100)
+                        : 0;
                     const danger = pct < 50;
+
                     return (
                       <View
                         key={t.id}
@@ -313,9 +308,7 @@ export default function TestingScreen() {
                         <View
                           style={[
                             styles.avatar,
-                            {
-                              backgroundColor: danger ? "#fee2e2" : "#dcfce7",
-                            },
+                            { backgroundColor: danger ? "#fee2e2" : "#dcfce7" },
                           ]}
                         >
                           <Text
@@ -324,9 +317,7 @@ export default function TestingScreen() {
                               { color: danger ? "#dc2626" : "#16a34a" },
                             ]}
                           >
-                            {String(t.subject || "?")
-                              .charAt(0)
-                              .toUpperCase()}
+                            {String(t.subject || "?").charAt(0).toUpperCase()}
                           </Text>
                         </View>
 
@@ -348,7 +339,7 @@ export default function TestingScreen() {
                             {pct}%
                           </Text>
                           <Text style={styles.marks}>
-                            {t.marks}/{t.totalMarks || 100}
+                            {obtainedNum}/{totalNum || "—"}
                           </Text>
                         </View>
 
@@ -357,11 +348,7 @@ export default function TestingScreen() {
                           style={styles.deleteBtn}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Ionicons
-                            name="trash-outline"
-                            size={18}
-                            color="#ef4444"
-                          />
+                          <Ionicons name="trash-outline" size={18} color="#ef4444" />
                         </TouchableOpacity>
                       </View>
                     );
@@ -393,7 +380,6 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: "#f3f5fb",
   },
-
   hero: {
     backgroundColor: "#1e1b4b",
     paddingTop: HEADER_TOP,
@@ -404,97 +390,50 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   circleA: {
-    position: "absolute",
-    top: -60,
-    right: -40,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(129,140,248,0.22)",
+    position: "absolute", top: -60, right: -40, width: 200, height: 200,
+    borderRadius: 100, backgroundColor: "rgba(129,140,248,0.22)",
   },
   circleB: {
-    position: "absolute",
-    bottom: -70,
-    left: -50,
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    backgroundColor: "rgba(99,102,241,0.18)",
+    position: "absolute", bottom: -70, left: -50, width: 170, height: 170,
+    borderRadius: 85, backgroundColor: "rgba(99,102,241,0.18)",
   },
   topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 18,
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between", marginBottom: 18,
   },
   roundBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.14)",
+    width: 42, height: 42, borderRadius: 21, alignItems: "center",
+    justifyContent: "center", backgroundColor: "rgba(255,255,255,0.14)",
   },
   topTitle: { fontSize: 17, fontWeight: "700", color: "#fff" },
   heroName: { fontSize: 26, fontWeight: "800", color: "#fff" },
   heroChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "rgba(255,255,255,0.16)", borderRadius: 10,
+    paddingHorizontal: 10, paddingVertical: 4,
   },
   heroChipText: { color: "#fff", fontSize: 12, fontWeight: "600" },
-
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 14,
-    ...shadow,
+    backgroundColor: "#fff", borderRadius: 24, padding: 16,
+    marginBottom: 14, ...shadow,
   },
   sectionHead: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 8,
+    flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8,
   },
   sectionIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 34, height: 34, borderRadius: 10,
+    alignItems: "center", justifyContent: "center",
   },
-  sectionTitle: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  countPill: {
-    borderRadius: 10,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-  },
+  sectionTitle: { flex: 1, fontSize: 16, fontWeight: "800", color: "#0f172a" },
+  countPill: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 3 },
   countPillText: { fontSize: 12, fontWeight: "800" },
-
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eef1f6",
-    gap: 12,
+    flexDirection: "row", alignItems: "center", paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: "#eef1f6", gap: 12,
   },
   avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 42, height: 42, borderRadius: 14,
+    alignItems: "center", justifyContent: "center",
   },
   avatarText: { fontWeight: "800", fontSize: 17 },
   subjectName: { fontSize: 15, fontWeight: "700", color: "#0f172a" },
@@ -502,62 +441,32 @@ const styles = StyleSheet.create({
   percent: { fontSize: 17, fontWeight: "800" },
   marks: { fontSize: 11, color: "#94a3b8", marginTop: 2 },
   deleteBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: "#fef2f2",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 4,
+    width: 36, height: 36, borderRadius: 12, backgroundColor: "#fef2f2",
+    alignItems: "center", justifyContent: "center", marginLeft: 4,
   },
-
   emptyCard: {
-    backgroundColor: "#fff",
-    borderRadius: 24,
-    padding: 28,
-    alignItems: "center",
-    ...shadow,
+    backgroundColor: "#fff", borderRadius: 24, padding: 28,
+    alignItems: "center", ...shadow,
   },
   emptyIcon: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: "#e0e7ff",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
+    width: 68, height: 68, borderRadius: 34, backgroundColor: "#e0e7ff",
+    alignItems: "center", justifyContent: "center", marginBottom: 14,
   },
   emptyTitle: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
   emptySub: {
-    color: "#64748b",
-    textAlign: "center",
-    marginTop: 6,
-    lineHeight: 20,
+    color: "#64748b", textAlign: "center", marginTop: 6, lineHeight: 20,
   },
-
   loadingText: { color: "#64748b", marginTop: 8 },
   errorIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#fee2e2",
-    alignItems: "center",
-    justifyContent: "center",
+    width: 72, height: 72, borderRadius: 36, backgroundColor: "#fee2e2",
+    alignItems: "center", justifyContent: "center",
   },
   errorText: {
-    color: "#ef4444",
-    fontSize: 15,
-    textAlign: "center",
-    paddingHorizontal: 28,
+    color: "#ef4444", fontSize: 15, textAlign: "center", paddingHorizontal: 28,
   },
   retryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 8,
-    backgroundColor: "#4338ca",
-    paddingVertical: 12,
-    paddingHorizontal: 22,
+    flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8,
+    backgroundColor: "#4338ca", paddingVertical: 12, paddingHorizontal: 22,
     borderRadius: 14,
   },
 });
