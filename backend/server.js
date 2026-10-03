@@ -417,7 +417,6 @@ app.get("/api/notifications", async (req, res) => {
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Backfill program for old notifications
     const missingProgram = records.filter((r) => !r.program);
     let programById = {};
     if (missingProgram.length > 0) {
@@ -503,7 +502,20 @@ app.get("/test-parents", async (req, res) => {
   }
 });
 
-// Clear all push tokens (for testing)
+// GET version — browser-friendly
+app.get("/test-parents/clear", async (req, res) => {
+  try {
+    const database = await connectDB();
+    await database
+      .collection("parents")
+      .updateMany({}, { $unset: { pushToken: "" } });
+    res.json({ success: true, message: "All push tokens cleared (GET)" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE version — for programmatic use
 app.delete("/test-parents/clear", async (req, res) => {
   try {
     const database = await connectDB();
