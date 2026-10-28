@@ -52,6 +52,16 @@ function normalizePhone(input) {
   return p;
 }
 
+// ✅ Match studentId whether stored as number OR string
+function studentIdCondition(studentId) {
+  const idStr = String(studentId);
+  const idNum = parseInt(studentId, 10);
+  return isNaN(idNum)
+    ? { studentId: idStr }
+    : { $or: [{ studentId: idStr }, { studentId: idNum }] };
+}
+
+// ✅ Fixed: tolerant attendance percentage (was returning 100 for everyone)
 async function getAttendancePercent(studentMongoId) {
   const database = await connectDB();
   const student = await database
@@ -59,16 +69,24 @@ async function getAttendancePercent(studentMongoId) {
     .findOne({ _id: studentMongoId });
   if (!student) return 100;
 
-  const records = await database
-    .collection("attendance")
-    .find({
-      studentId: String(student.id),
-      schoolId: student.schoolId,
-      program: student.program || "school",
-    })
-    .toArray();
+  const idCond = studentIdCondition(student.id);
+
+  // Try strict first
+  const strict = { ...idCond };
+  if (student.schoolId) strict.schoolId = String(student.schoolId);
+  if (student.program) strict.program = String(student.program);
+
+  let records = await database.collection("attendance").find(strict).toArray();
+
+  // Fallback: studentId only
+  if (records.length === 0) {
+    records = await database.collection("attendance").find(idCond).toArray();
+  }
+
   if (records.length === 0) return 100;
-  const present = records.filter((r) => r.status === "P" || r.present === true).length;
+  const present = records.filter(
+    (r) => r.status === "P" || r.present === true
+  ).length;
   return Math.round((present / records.length) * 100);
 }
 
@@ -217,7 +235,7 @@ app.get("/api/students", async (req, res) => {
 });
 
 // =====================================================
-// ATTENDANCE — program + schoolId aware
+// ATTENDANCE — ✅ FIXED: tolerant query + fallback
 // =====================================================
 
 app.get("/api/attendance", async (req, res) => {
@@ -225,11 +243,22 @@ app.get("/api/attendance", async (req, res) => {
   const { studentId, program, schoolId } = req.query;
   try {
     const database = await connectDB();
-    const query = { studentId: String(studentId) };
-    if (program) query.program = String(program);
-    if (schoolId) query.schoolId = String(schoolId);
+    if (!studentId) return res.json([]);
 
-    const records = await database.collection("attendance").find(query).toArray();
+    // Match studentId whether number or string
+    const idCond = studentIdCondition(studentId);
+
+    // 1) Strict match (studentId + program + schoolId)
+    const strict = { ...idCond };
+    if (program) strict.program = String(program);
+    if (schoolId) strict.schoolId = String(schoolId);
+
+    let records = await database.collection("attendance").find(strict).toArray();
+
+    // 2) Fallback: studentId only (ignores wrong/missing program & schoolId)
+    if (records.length === 0) {
+      records = await database.collection("attendance").find(idCond).toArray();
+    }
 
     res.json(
       records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined }))
@@ -246,9 +275,11 @@ app.delete("/api/attendance/month", async (req, res) => {
       return res.status(400).json({ error: "studentId and month are required" });
     }
     const database = await connectDB();
-    const result = await database
-      .collection("attendance")
-      .deleteMany({ studentId: String(studentId), date: String(month) });
+    const idCond = studentIdCondition(studentId);
+    const result = await database.collection("attendance").deleteMany({
+      ...idCond,
+      $or: [{ date: String(month) }, { month: String(month) }],
+    });
     res.json({ success: true, deletedCount: result.deletedCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -256,7 +287,7 @@ app.delete("/api/attendance/month", async (req, res) => {
 });
 
 // =====================================================
-// TESTS — program + schoolId aware
+// TESTS
 // =====================================================
 
 app.get("/api/tests", async (req, res) => {
@@ -296,7 +327,7 @@ app.delete("/api/tests", async (req, res) => {
 });
 
 // =====================================================
-// EXAMS — program + schoolId aware
+// EXAMS
 // =====================================================
 
 app.get("/api/exams", async (req, res) => {
@@ -336,7 +367,7 @@ app.delete("/api/exams", async (req, res) => {
 });
 
 // =====================================================
-// FEES — program + schoolId aware
+// FEES
 // =====================================================
 
 app.get("/api/fees", async (req, res) => {
@@ -398,7 +429,7 @@ app.post("/api/parent/push-token", async (req, res) => {
 });
 
 // =====================================================
-// NOTIFICATIONS — filter by studentId + program + schoolId
+// NOTIFICATIONS
 // =====================================================
 
 app.get("/api/notifications", async (req, res) => {
