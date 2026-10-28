@@ -71,14 +71,12 @@ async function getAttendancePercent(studentMongoId) {
 
   const idCond = studentIdCondition(student.id);
 
-  // Try strict first
   const strict = { ...idCond };
   if (student.schoolId) strict.schoolId = String(student.schoolId);
   if (student.program) strict.program = String(student.program);
 
   let records = await database.collection("attendance").find(strict).toArray();
 
-  // Fallback: studentId only
   if (records.length === 0) {
     records = await database.collection("attendance").find(idCond).toArray();
   }
@@ -235,7 +233,7 @@ app.get("/api/students", async (req, res) => {
 });
 
 // =====================================================
-// ATTENDANCE — ✅ FIXED: tolerant query + fallback
+// ATTENDANCE — ✅ tolerant + fallback
 // =====================================================
 
 app.get("/api/attendance", async (req, res) => {
@@ -245,17 +243,14 @@ app.get("/api/attendance", async (req, res) => {
     const database = await connectDB();
     if (!studentId) return res.json([]);
 
-    // Match studentId whether number or string
     const idCond = studentIdCondition(studentId);
 
-    // 1) Strict match (studentId + program + schoolId)
     const strict = { ...idCond };
     if (program) strict.program = String(program);
     if (schoolId) strict.schoolId = String(schoolId);
 
     let records = await database.collection("attendance").find(strict).toArray();
 
-    // 2) Fallback: studentId only (ignores wrong/missing program & schoolId)
     if (records.length === 0) {
       records = await database.collection("attendance").find(idCond).toArray();
     }
@@ -287,7 +282,7 @@ app.delete("/api/attendance/month", async (req, res) => {
 });
 
 // =====================================================
-// TESTS
+// TESTS — ✅ tolerant + fallback
 // =====================================================
 
 app.get("/api/tests", async (req, res) => {
@@ -295,18 +290,31 @@ app.get("/api/tests", async (req, res) => {
   const { studentId, month, testType, program, schoolId } = req.query;
   try {
     const database = await connectDB();
-    const query = {};
-    if (studentId) query.studentId = String(studentId);
-    if (month) query.month = String(month);
-    if (testType) query.testType = String(testType);
-    if (program) query.program = String(program);
-    if (schoolId) query.schoolId = String(schoolId);
+    if (!studentId) return res.json([]);
 
-    const records = await database
+    const idCond = studentIdCondition(studentId);
+
+    const strict = { ...idCond };
+    if (month) strict.month = String(month);
+    if (testType) strict.testType = String(testType);
+    if (program) strict.program = String(program);
+    if (schoolId) strict.schoolId = String(schoolId);
+
+    let records = await database
       .collection("tests")
-      .find(query)
+      .find(strict)
       .sort({ updatedAt: -1 })
       .toArray();
+
+    if (records.length === 0) {
+      const loose = { ...idCond };
+      if (month) loose.month = String(month);
+      records = await database
+        .collection("tests")
+        .find(loose)
+        .sort({ updatedAt: -1 })
+        .toArray();
+    }
 
     res.json(records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined })));
   } catch (err) {
@@ -327,7 +335,7 @@ app.delete("/api/tests", async (req, res) => {
 });
 
 // =====================================================
-// EXAMS
+// EXAMS — ✅ tolerant + fallback
 // =====================================================
 
 app.get("/api/exams", async (req, res) => {
@@ -335,18 +343,31 @@ app.get("/api/exams", async (req, res) => {
   const { studentId, month, examType, program, schoolId } = req.query;
   try {
     const database = await connectDB();
-    const query = {};
-    if (studentId) query.studentId = String(studentId);
-    if (month) query.month = String(month);
-    if (examType) query.examType = String(examType);
-    if (program) query.program = String(program);
-    if (schoolId) query.schoolId = String(schoolId);
+    if (!studentId) return res.json([]);
 
-    const records = await database
+    const idCond = studentIdCondition(studentId);
+
+    const strict = { ...idCond };
+    if (month) strict.month = String(month);
+    if (examType) strict.examType = String(examType);
+    if (program) strict.program = String(program);
+    if (schoolId) strict.schoolId = String(schoolId);
+
+    let records = await database
       .collection("exams")
-      .find(query)
+      .find(strict)
       .sort({ updatedAt: -1 })
       .toArray();
+
+    if (records.length === 0) {
+      const loose = { ...idCond };
+      if (month) loose.month = String(month);
+      records = await database
+        .collection("exams")
+        .find(loose)
+        .sort({ updatedAt: -1 })
+        .toArray();
+    }
 
     res.json(records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined })));
   } catch (err) {
@@ -367,7 +388,7 @@ app.delete("/api/exams", async (req, res) => {
 });
 
 // =====================================================
-// FEES
+// FEES — ✅ tolerant + fallback
 // =====================================================
 
 app.get("/api/fees", async (req, res) => {
@@ -375,17 +396,30 @@ app.get("/api/fees", async (req, res) => {
   const { studentId, month, program, schoolId } = req.query;
   try {
     const database = await connectDB();
-    const query = {};
-    if (studentId) query.studentId = String(studentId);
-    if (month) query.month = String(month);
-    if (program) query.program = String(program);
-    if (schoolId) query.schoolId = String(schoolId);
+    if (!studentId) return res.json([]);
 
-    const records = await database
+    const idCond = studentIdCondition(studentId);
+
+    const strict = { ...idCond };
+    if (month) strict.month = String(month);
+    if (program) strict.program = String(program);
+    if (schoolId) strict.schoolId = String(schoolId);
+
+    let records = await database
       .collection("fees")
-      .find(query)
+      .find(strict)
       .sort({ paidAt: -1 })
       .toArray();
+
+    if (records.length === 0) {
+      const loose = { ...idCond };
+      if (month) loose.month = String(month);
+      records = await database
+        .collection("fees")
+        .find(loose)
+        .sort({ paidAt: -1 })
+        .toArray();
+    }
 
     res.json(records.map((r) => ({ ...r, id: r._id.toString(), _id: undefined })));
   } catch (err) {
@@ -429,7 +463,7 @@ app.post("/api/parent/push-token", async (req, res) => {
 });
 
 // =====================================================
-// NOTIFICATIONS
+// NOTIFICATIONS — ✅ tolerant + fallback
 // =====================================================
 
 app.get("/api/notifications", async (req, res) => {
@@ -437,16 +471,27 @@ app.get("/api/notifications", async (req, res) => {
   const { studentId, program, schoolId } = req.query;
   try {
     const database = await connectDB();
-    const query = {};
-    if (studentId) query.studentId = String(studentId);
-    if (program) query.program = String(program);
-    if (schoolId) query.schoolId = String(schoolId);
+    if (!studentId) return res.json([]);
 
-    const records = await database
+    const idCond = studentIdCondition(studentId);
+
+    const strict = { ...idCond };
+    if (program) strict.program = String(program);
+    if (schoolId) strict.schoolId = String(schoolId);
+
+    let records = await database
       .collection("notifications")
-      .find(query)
+      .find(strict)
       .sort({ createdAt: -1 })
       .toArray();
+
+    if (records.length === 0) {
+      records = await database
+        .collection("notifications")
+        .find(idCond)
+        .sort({ createdAt: -1 })
+        .toArray();
+    }
 
     const missingProgram = records.filter((r) => !r.program);
     let programById = {};
@@ -533,7 +578,6 @@ app.get("/test-parents", async (req, res) => {
   }
 });
 
-// GET version — browser-friendly
 app.get("/test-parents/clear", async (req, res) => {
   try {
     const database = await connectDB();
@@ -546,7 +590,6 @@ app.get("/test-parents/clear", async (req, res) => {
   }
 });
 
-// DELETE version — for programmatic use
 app.delete("/test-parents/clear", async (req, res) => {
   try {
     const database = await connectDB();
